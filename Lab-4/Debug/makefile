@@ -11,7 +11,8 @@ ORDERED_OBJS += \
 "./main.obj" \
 "./startup_msp432p401r_ccs.obj" \
 "./system_msp432p401r.obj" \
-"./uart.obj" \
+"./Libs/buffer_fifo/buffer_fifo.obj" \
+"./Libs/uart/uart.obj" \
 "../msp432p401r.cmd" \
 $(GEN_CMDS__FLAG) \
 -llibc.a \
@@ -24,7 +25,11 @@ RMDIR := rm -rf
 # All of the sources participating in the build are defined here
 -include sources.mk
 -include subdir_vars.mk
+-include Libs/buffer_fifo/subdir_vars.mk
+-include Libs/uart/subdir_vars.mk
 -include subdir_rules.mk
+-include Libs/buffer_fifo/subdir_rules.mk
+-include Libs/uart/subdir_rules.mk
 -include objects.mk
 
 ifneq ($(MAKECMDGOALS),clean)
@@ -153,8 +158,8 @@ Lab-4.hex: $(EXE_OUTPUTS)
 # Other Targets
 clean:
 	-$(RM) $(EXE_OUTPUTS__QUOTED)$(BIN_OUTPUTS__QUOTED)
-	-$(RM) "main.d" "startup_msp432p401r_ccs.d" "system_msp432p401r.d" "uart.d" 
-	-$(RM) "main.obj" "startup_msp432p401r_ccs.obj" "system_msp432p401r.obj" "uart.obj" 
+	-$(RM) "main.d" "startup_msp432p401r_ccs.d" "system_msp432p401r.d" "Libs/buffer_fifo/buffer_fifo.d" "Libs/uart/uart.d" 
+	-$(RM) "main.obj" "startup_msp432p401r_ccs.obj" "system_msp432p401r.obj" "Libs/buffer_fifo/buffer_fifo.obj" "Libs/uart/uart.obj" 
 	-@echo 'Finished clean'
 	-@echo ' '
 
