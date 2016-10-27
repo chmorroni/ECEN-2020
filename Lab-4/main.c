@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include "msp.h"
-#include "Libs/uart/uart.h"
+#include "Libs/uart.h"
 //#include "errors.h"
 #include "core_cm4.h"
 
@@ -27,21 +27,20 @@ void main(void) {
 	enableUART(CS_CTL0_DCORSEL_2, 115200);
 	sendByteUART('d');
 	enableUARTInterrupts(&test, EUSCI_A_IE_RXIE);
-	while(1) sendByteUART('d');
-//	P1DIR |= BIT0;
-//	uint32_t tempV = 0;
-//    WDTCTL = WDTPW | WDTHOLD;                  // Stop watchdog timer
-//    /* Other micro controller configuration code here... */
-//    configure_ADC();                           // configure the ADC for interrupts...
-//    __enable_interrupt();
-//    SCB->SCR &= ~SCB_SCR_ENABLE_SLEEPONEXIT;   // Wake up on exit from ISR
-//    while(1) {
-//    	P1OUT ^= BIT0;
-//    	ADC14->CTL0 |= ADC14_CTL0_SC;          // Sampling and conversion start
-////    	__sleep();                             // Blocks here until Conversion finishes
-//    	tempV = ADC14->MEM[0];
-//    	printf("Temperature readings: %10d     %10g     %10g     %10g\n", tempV, vToC(tempV), vToF(tempV), vToK(tempV));
-//    }
+	P1DIR |= BIT0;
+	uint32_t tempV = 0;
+    WDTCTL = WDTPW | WDTHOLD;                  // Stop watchdog timer
+    /* Other micro controller configuration code here... */
+    configure_ADC();                           // configure the ADC for interrupts...
+    __enable_interrupt();
+    SCB->SCR &= ~SCB_SCR_ENABLE_SLEEPONEXIT;   // Wake up on exit from ISR
+    while(1) {
+    	P1OUT ^= BIT0;
+    	ADC14->CTL0 |= ADC14_CTL0_SC;          // Sampling and conversion start
+//    	__sleep();                             // Blocks here until Conversion finishes
+    	tempV = ADC14->MEM[0];
+    	printf("Temperature readings: %10d     %10g     %10g     %10g\n", tempV, vToC(tempV), vToF(tempV), vToK(tempV));
+    }
 }
 
 // 1.9 mV / deg C
