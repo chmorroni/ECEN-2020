@@ -105,6 +105,9 @@ extern void PORT5_IRQHandler    (void) __attribute__((weak,alias("Default_Handle
 extern void PORT6_IRQHandler    (void) __attribute__((weak,alias("Default_Handler")));
 
 extern void eUSCIA0Handler(void);
+extern void ADC14Handler(void);
+extern void Port1Handler(void);
+extern void TimerA0Handler(void);
 
 /* Interrupt vector table.  Note that the proper constructs must be placed on this to */
 /* ensure that it ends up at physical address 0x0000.0000 or at the start of          */
@@ -138,7 +141,7 @@ void (* const interruptVectors[])(void) =
     FLCTL_IRQHandler,                      /* FLCTL ISR                 */
     COMP_E0_IRQHandler,                    /* COMP0 ISR                 */
     COMP_E1_IRQHandler,                    /* COMP1 ISR                 */
-    TA0_0_IRQHandler,                      /* TA0_0 ISR                 */
+	TimerA0Handler,                        /* TA0_0 ISR *****************/
     TA0_N_IRQHandler,                      /* TA0_N ISR                 */
     TA1_0_IRQHandler,                      /* TA1_0 ISR                 */
     TA1_N_IRQHandler,                      /* TA1_N ISR                 */
@@ -154,7 +157,7 @@ void (* const interruptVectors[])(void) =
     EUSCIB1_IRQHandler,                    /* EUSCIB1 ISR               */
     EUSCIB2_IRQHandler,                    /* EUSCIB2 ISR               */
     EUSCIB3_IRQHandler,                    /* EUSCIB3 ISR               */
-    ADC14_IRQHandler,                      /* ADC14 ISR                 */
+	ADC14Handler,                          /* ADC14 ISR *****************/
     T32_INT1_IRQHandler,                   /* T32_INT1 ISR              */
     T32_INT2_IRQHandler,                   /* T32_INT2 ISR              */
     T32_INTC_IRQHandler,                   /* T32_INTC ISR              */
@@ -165,7 +168,7 @@ void (* const interruptVectors[])(void) =
     DMA_INT2_IRQHandler,                   /* DMA_INT2 ISR              */
     DMA_INT1_IRQHandler,                   /* DMA_INT1 ISR              */
     DMA_INT0_IRQHandler,                   /* DMA_INT0 ISR              */
-    PORT1_IRQHandler,                      /* PORT1 ISR                 */
+	Port1Handler,                          /* PORT1 ISR *****************/
     PORT2_IRQHandler,                      /* PORT2 ISR                 */
     PORT3_IRQHandler,                      /* PORT3 ISR                 */
     PORT4_IRQHandler,                      /* PORT4 ISR                 */

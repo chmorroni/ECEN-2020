@@ -17,6 +17,8 @@ main.obj: /home/albert/ti/ccsv6/ccs_base/arm/include/CMSIS/core_cmSimd.h
 main.obj: /home/albert/ti/ccsv6/ccs_base/arm/include/system_msp432p401r.h
 main.obj: ../Libs/uart.h
 main.obj: ../Libs/helpers.h
+main.obj: ../Libs/buffer_fifo.h
+main.obj: /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdlib.h
 main.obj: /home/albert/ti/ccsv6/ccs_base/arm/include/CMSIS/core_cm4.h
 
 ../main.c: 
@@ -36,4 +38,6 @@ main.obj: /home/albert/ti/ccsv6/ccs_base/arm/include/CMSIS/core_cm4.h
 /home/albert/ti/ccsv6/ccs_base/arm/include/system_msp432p401r.h: 
 ../Libs/uart.h: 
 ../Libs/helpers.h: 
+../Libs/buffer_fifo.h: 
+/home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdlib.h: 
 /home/albert/ti/ccsv6/ccs_base/arm/include/CMSIS/core_cm4.h: 
