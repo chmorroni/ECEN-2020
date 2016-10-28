@@ -1,8 +1,7 @@
 #include "uart.h"
 
-static void noOp(void) {}
-
-static interruptFuncPtr callback = &noOp;
+static void nop(void) {}
+static interruptFuncPtr callback = &nop;
 
 /**
  * The function that is called by the interrupt. A function
