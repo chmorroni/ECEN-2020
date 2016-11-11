@@ -1,0 +1,37 @@
+Debugging:
+	Logging
+		Received packets
+		Sent packets
+		Sensor values
+		Timestaps
+	Commands
+		v: Toggle verbose output
+		p: Print state (sensors)
+		s: Speed
+			- Wait for number (speed)
+		a: Angle
+			- Wait for number (angle)
+		e: Enable
+		d: Disable
+
+Running:
+	Initialization
+		Handshake
+			Passed through directly
+	Catch exceptions
+		Stop car
+	Reading sensors
+		Timer
+			20Hz
+	Command processing
+		Wait for read command from MCU
+			Read from RX
+				Safetify comands
+					Send back
+	Safetifying
+		Preserve direction
+		Reverse wheels to limit speed based on distance
+
+Hardware:
+	Power
+	LVC

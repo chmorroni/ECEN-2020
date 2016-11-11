@@ -6,7 +6,7 @@
 #include "core_cm4.h"
 
 #undef PB_1
-#undef PB_4
+#define PB_4
 
 #define SCB_SCR_ENABLE_SLEEPONEXIT (0x00000002)
 #define ADC_TEMP_STEP_SIZE_14 (0.000201416)
@@ -62,7 +62,6 @@ void main(void) {
     __enable_interrupt();
     SCB->SCR &= ~SCB_SCR_ENABLE_SLEEPONEXIT; // Wake up on exit from ISR
     while(1) {
-
     	if ((posRead & X_POS) && (posRead & Y_POS)) { // The joystick position was scanned
     		quadrant = 0;
     		if (joyPos.x > JOY_X_CENTER + JITTER) {   // Ensure we are not at the origin or axes
@@ -98,16 +97,15 @@ void main(void) {
     	tempV = ADC14->MEM[0];
     	sendTempUART(tempV);
 #endif
-
     }
 }
 
 // 1.9 mV / deg C
 // -40 = 0
-// VSense (V from ADC) = TCsensor * Temp (Want) + Vsensor (730 mV)
+// VSense (V from ADC) = TCsensor * Temp (Want) + Vsensor (685 mV)
 // Temp = (VSense - Vsensor)/TCsensor
 inline float vToC(uint32_t vSense) {
-	return (((float) vSense) * ADC_TEMP_STEP_SIZE_14 - .73 ) / 0.0019;
+	return (((float) vSense) * ADC_TEMP_STEP_SIZE_14 - .685 ) / 0.0019;
 }
 
 inline float vToF(uint32_t vSense) {
@@ -119,33 +117,36 @@ inline float vToK(uint32_t vSense) {
 }
 
 void configureADC() {
-	P6SEL0 |= BIT0; // Select A16 mode
+	P6SEL0 |= BIT0;                            // Select A16 mode
 	P6SEL1 |= BIT0;
-	P4SEL0 |= BIT4; // Select A9 mode
+	P4SEL0 |= BIT4;                            // Select A9 mode
 	P4SEL1 |= BIT4;
 	// Initialize the shared reference module
 	// By default, REFMSTR=1 => REFCTL is used to configure the internal reference
-	while (REF_A->CTL0 & REF_A_CTL0_GENBUSY);               // If ref generator busy, WAIT
-
-	REF_A->CTL0 = REF_A_CTL0_VSEL_0 |                       // Vref = 1.2
-			      REF_A_CTL0_ON;                            // Enables references
-	REF_A->CTL0 &= ~REF_A_CTL0_TCOFF;                       // Turn onTemperature Sensor
-	ADC14->CTL0 = ADC14_CTL0_SHT0_5 |                       // Sample/hold set to 96 cycles
-			      ADC14_CTL0_ON |                           // Turn on ADC
+	while (REF_A->CTL0 & REF_A_CTL0_GENBUSY);  // If ref generator busy, WAIT
+	REF_A->CTL0 = REF_A_CTL0_VSEL_0 |          // Vref = 1.2
+			      REF_A_CTL0_ON;               // Enables references
+	REF_A->CTL0 &= ~REF_A_CTL0_TCOFF;          // Turn onTemperature Sensor
+	ADC14->CTL0 = ADC14_CTL0_SHT0_5 |          // Sample/hold set to 96 cycles
+			      ADC14_CTL0_ON |              // Turn on ADC
 				  ADC14_CTL0_CONSEQ_1 |
-				  ADC14_CTL0_SHP;                           // Pulse sample mode
-	ADC14->CTL0 &= ~ADC14_CTL0_ENC;                         // Allow changes
-	ADC14->CTL1 = ADC14_CTL1_TCMAP | ADC14_CTL1_RES__14BIT; // Conf internal temp sensor channel,set resolution
-	ADC14->MCTL[0] = ADC14_MCTLN_INCH_22;                   // Map Temp Analog channel to MEM0/MCTL0, set 3.3v ref
-	ADC14->MCTL[1] = ADC14_MCTLN_INCH_15;                   // Map joyPos.x to MEM[1]
-	ADC14->MCTL[2] = ADC14_MCTLN_INCH_9 |                   // Map joyPos.y to MEM[2]
-			         ADC14_MCTLN_EOS;                       // Stop ADC from checking chanels once it reaches MEM[2]
-	ADC14->IER0 = ADC14_IER0_IE0 |                          // Enable MEM 0/1/2 Interrupts
+				  ADC14_CTL0_SHP;              // Pulse sample mode
+	ADC14->CTL0 &= ~ADC14_CTL0_ENC;            // Allow changes
+	ADC14->CTL1 = ADC14_CTL1_TCMAP |
+	              ADC14_CTL1_RES__14BIT;       // Conf internal temp sensor channel,set resolution
+	ADC14->MCTL[0] = ADC14_MCTLN_INCH_22;      // Map Temp Analog channel to MEM0/MCTL0, set 3.3v ref
+#ifdef PB_4
+	ADC14->MCTL[0] |= ADC14_MCTLN_EOS;         // Only want temp sensor data for this one
+#endif
+	ADC14->MCTL[1] = ADC14_MCTLN_INCH_15;      // Map joyPos.x to MEM[1]
+	ADC14->MCTL[2] = ADC14_MCTLN_INCH_9 |      // Map joyPos.y to MEM[2]
+			         ADC14_MCTLN_EOS;          // Stop ADC from checking chanels once it reaches MEM[2]
+	ADC14->IER0 = ADC14_IER0_IE0 |             // Enable MEM 0/1/2 Interrupts
 			      ADC14_IER0_IE1 |
 				  ADC14_IER0_IE2;
-	while(!(REF_A->CTL0 & REF_A_CTL0_GENRDY));              // Wait for refgenerator to settle
-	ADC14->CTL0 |= ADC14_CTL0_ENC;                          // Enable Conversions
-	NVIC_EnableIRQ(ADC14_IRQn);                             // Enable ADC int in NVIC module}
+	while(!(REF_A->CTL0 & REF_A_CTL0_GENRDY)); // Wait for refgenerator to settle
+	ADC14->CTL0 |= ADC14_CTL0_ENC;             // Enable Conversions
+	NVIC_EnableIRQ(ADC14_IRQn);                // Enable ADC int in NVIC module}
 }
 
 void configureButtons(void) {
