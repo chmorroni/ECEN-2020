@@ -1,37 +1,75 @@
+CAR:
+
 Debugging:
 	Logging
 		Received packets
-		Sent packets
 		Sensor values
+		Adjustments made for safety
+		NRF status
 		Timestaps
 	Commands
 		v: Toggle verbose output
-		p: Print state (sensors)
+		i: Info (sensors, motors, turning, last command, NRF)
 		s: Speed
 			- Wait for number (speed)
-		a: Angle
-			- Wait for number (angle)
+			- Wait for number (repeats)
+		t: Turn
+			- Wait for direction {L, R, S}
 		e: Enable
+		l: Toggle lights
 		d: Disable
 
 Running:
 	Initialization
-		Handshake
-			Passed through directly
-	Catch exceptions
-		Stop car
+		Setup NRF
+	Catch exceptions (?)
+		Stop car (Change default interrupt handler)
+		Blink lights
 	Reading sensors
-		Timer
-			20Hz
+		Timer (20Hz)
+		1 sonar
+		2 light sensors
 	Command processing
-		Wait for read command from MCU
-			Read from RX
-				Safetify comands
-					Send back
-	Safetifying
-		Preserve direction
-		Reverse wheels to limit speed based on distance
+		Interrupt from NRF
+			Decode into struct
+			Safetify
+				Preserve direction
 
-Hardware:
-	Power
-	LVC
+Drivers:
+	Turning
+		2 pins: Turn/~Strait, Left/~Right (?)
+
+
+CONTROLLER:
+
+Debugging:
+	Logging
+		Sent packets
+		Sensor/button values
+		NRF status
+		Timestaps
+	Commands
+		v: Toggle verbose output
+		i: Info (sensors, motors, turning, last command, NRF)
+		s: Speed
+			- Wait for number (speed)
+			- Wait for number (cycles)
+		a: Angle
+			- Wait for number (angle)
+		e: Enable TX
+		d: Disable TX
+
+Running:
+	Initialization
+		Setup NRF
+	Catch exceptions
+		Send error signal (11 on turn bits)
+	Reading sensors
+		Timer (60Hz)
+		Joysticks
+	Sending data
+		Encode in byte
+
+Drivers:
+	Joysticks
+		2 pins: x(A), y(A)
