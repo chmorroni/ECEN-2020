@@ -104,6 +104,16 @@ extern void PORT4_IRQHandler    (void) __attribute__((weak,alias("Default_Handle
 extern void PORT5_IRQHandler    (void) __attribute__((weak,alias("Default_Handler")));
 extern void PORT6_IRQHandler    (void) __attribute__((weak,alias("Default_Handler")));
 
+/* User defined interrupts
+ */
+extern void TA1Handler(void);
+extern void Port1Handler(void);
+extern void Port6Handler(void);
+extern void UARTHandler(void);
+extern void SPIHandler(void);
+extern void SPISlaveHandler(void);
+extern void RTCHandler(void);
+
 /* Interrupt vector table.  Note that the proper constructs must be placed on this to */
 /* ensure that it ends up at physical address 0x0000.0000 or at the start of          */
 /* the program if located at a start address other than 0.                            */
@@ -136,17 +146,17 @@ void (* const interruptVectors[])(void) =
     FLCTL_IRQHandler,                      /* FLCTL ISR                 */
     COMP_E0_IRQHandler,                    /* COMP0 ISR                 */
     COMP_E1_IRQHandler,                    /* COMP1 ISR                 */
-    TA0_0_IRQHandler,                      /* TA0_0 ISR                 */
-    TA0_N_IRQHandler,                      /* TA0_N ISR                 */
-    TA1_0_IRQHandler,                      /* TA1_0 ISR                 */
-    TA1_N_IRQHandler,                      /* TA1_N ISR                 */
+	TA0_0_IRQHandler,                      /* TA0_0 ISR                 */
+	TA0_N_IRQHandler,                      /* TA0_N ISR                 */
+	TA1Handler,                            /* TA1_0 ISR *****************/
+	TA1_N_IRQHandler,                      /* TA1_N ISR                 */
     TA2_0_IRQHandler,                      /* TA2_0 ISR                 */
     TA2_N_IRQHandler,                      /* TA2_N ISR                 */
     TA3_0_IRQHandler,                      /* TA3_0 ISR                 */
     TA3_N_IRQHandler,                      /* TA3_N ISR                 */
-    EUSCIA0_IRQHandler,                    /* EUSCIA0 ISR               */
-    EUSCIA1_IRQHandler,                    /* EUSCIA1 ISR               */
-    EUSCIA2_IRQHandler,                    /* EUSCIA2 ISR               */
+	UARTHandler,                           /* EUSCIA0 ISR ***************/
+	SPIHandler,                            /* EUSCIA1 ISR ***************/
+	SPISlaveHandler,                       /* EUSCIA2 ISR ***************/
     EUSCIA3_IRQHandler,                    /* EUSCIA3 ISR               */
     EUSCIB0_IRQHandler,                    /* EUSCIB0 ISR               */
     EUSCIB1_IRQHandler,                    /* EUSCIB1 ISR               */
@@ -157,18 +167,18 @@ void (* const interruptVectors[])(void) =
     T32_INT2_IRQHandler,                   /* T32_INT2 ISR              */
     T32_INTC_IRQHandler,                   /* T32_INTC ISR              */
     AES256_IRQHandler,                     /* AES ISR                   */
-    RTC_C_IRQHandler,                      /* RTC ISR                   */
+	RTCHandler,                            /* RTC ISR *******************/
     DMA_ERR_IRQHandler,                    /* DMA_ERR ISR               */
     DMA_INT3_IRQHandler,                   /* DMA_INT3 ISR              */
     DMA_INT2_IRQHandler,                   /* DMA_INT2 ISR              */
     DMA_INT1_IRQHandler,                   /* DMA_INT1 ISR              */
     DMA_INT0_IRQHandler,                   /* DMA_INT0 ISR              */
-    PORT1_IRQHandler,                      /* PORT1 ISR                 */
+	Port1Handler,                          /* PORT1 ISR *****************/
     PORT2_IRQHandler,                      /* PORT2 ISR                 */
     PORT3_IRQHandler,                      /* PORT3 ISR                 */
     PORT4_IRQHandler,                      /* PORT4 ISR                 */
     PORT5_IRQHandler,                      /* PORT5 ISR                 */
-    PORT6_IRQHandler                       /* PORT6 ISR                 */
+	Port6Handler                           /* PORT6 ISR *****************/
 };
 
 /* Forward declaration of the default fault handlers. */

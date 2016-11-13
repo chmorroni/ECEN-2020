@@ -23,7 +23,8 @@ void eUSCIA0Handler(void) {
  *   CS_CTL0_DCORSEL_3 // Nominal DCO Frequency Range (MHz): 8 to 16
  *   CS_CTL0_DCORSEL_4 // Nominal DCO Frequency Range (MHz): 16 to 32
  *   CS_CTL0_DCORSEL_5 // Nominal DCO Frequency Range (MHz): 32 to 64
- * @param baud is the baud rate desired. Standard rates recommended
+ * @param baud is the baud rate desired. Standard rates recommended, defaults to
+ *        9600 if given 0
  */
 void enableUART(uint32_t freq, uint32_t baud) {
 	float mhz, n, n16, fracn;
@@ -38,17 +39,18 @@ void enableUART(uint32_t freq, uint32_t baud) {
 	CS->KEY = 0;                // lock CS module for register access
 
 	/* Configure serial port */
-	P1SEL0 |= BIT2 | BIT3;                  // 2 = RX 3 = TX
-	P1SEL1 &= ~(BIT2 | BIT3);               // Set to primary function (01)
-	UCA0CTLW0 |= UCSWRST;                   // Put eUSCI in reset
-	UCA0CTLW0 = EUSCI_A_CTLW0_SSEL__SMCLK | // Use SMCLK
-	            UCSWRST;                    // Keep eUSCI in reset
+	P1->SEL0 |= BIT2 | BIT3;                      // 2 = RX 3 = TX
+	P1->SEL1 &= ~(BIT2 | BIT3);                   // Set to primary function (01)
+	EUSCI_A0->CTLW0 |= EUSCI_A_CTLW0_SWRST;       // Put eUSCI in reset
+	EUSCI_A0->CTLW0 = EUSCI_A_CTLW0_SSEL__SMCLK | // Use SMCLK
+	                  EUSCI_A_CTLW0_SWRST;        // Keep eUSCI in reset
 
-	mhz = 1.5 * (1 << (freq >> 16));        // bit pattern to MHz
-	n = mhz * 1000000 / baud;               // N = freqBRCLK / baud
+	if (!baud) baud = 9600;                       // Default to 9600
+	mhz = 1.5 * (1 << (freq >> 16));              // bit pattern to MHz
+	n = mhz * 1000000 / baud;                     // N = freqBRCLK / baud
 	n16 = n / 16;
-	intn = (uint32_t) (n > 16 ? n16 : n);   // INT(N/16)
-	fracn = ((n > 16 ? n16 : n) - intn);    // N - INT(N/16)
+	intn = (uint32_t) (n > 16 ? n16 : n);         // INT(N/16)
+	fracn = ((n > 16 ? n16 : n) - intn);          // N - INT(N/16)
 
 	/* Table 22-4 in family datasheet */
 	brs = fracn >= 0.9288 ? 0xFE :
@@ -87,18 +89,18 @@ void enableUART(uint32_t freq, uint32_t baud) {
 	      fracn >= 0.0715 ? 0x02 :
 	      fracn >= 0.0529 ? 0x01 : 0;
 
-	if (n > 16) {                                                        // Need to use oversampling mode
-		UCA0BRW = intn;                                                  // Set clock scaler to INT(N/16)
-		UCA0MCTLW = ((uint32_t) (fracn * 16)) << EUSCI_A_MCTLW_BRF_OFS | // INT([(N/16) – INT(N/16)] × 16
-		            brs << EUSCI_A_MCTLW_BRS_OFS |                       // Modulation pattern (see table above)
-		            EUSCI_A_MCTLW_OS16;                                  // Use modulator
+	if (n > 16) {                                                              // Need to use oversampling mode
+		EUSCI_A0->BRW = intn;                                                  // Set clock scaler to INT(N/16)
+		EUSCI_A0->MCTLW = ((uint32_t) (fracn * 16)) << EUSCI_A_MCTLW_BRF_OFS | // INT([(N/16) – INT(N/16)] × 16
+		                  brs << EUSCI_A_MCTLW_BRS_OFS |                       // Modulation pattern (see table above)
+		                  EUSCI_A_MCTLW_OS16;                                  // Use modulator
 	}
-	else {                                        // Don't need to use oversampling mode
-		UCA0BRW = intn;                           // Set clock scaler to N
-		UCA0MCTLW = brs << EUSCI_A_MCTLW_BRS_OFS; // Modulation pattern (see table above)
+	else {                                              // Don't need to use oversampling mode
+		EUSCI_A0->BRW = intn;                           // Set clock scaler to N
+		EUSCI_A0->MCTLW = brs << EUSCI_A_MCTLW_BRS_OFS; // Modulation pattern (see table above)
 	}
 
-	UCA0CTLW0 &= ~UCSWRST; // Initialize eUSCI
+	EUSCI_A0->CTLW0 &= ~EUSCI_A_CTLW0_SWRST; // Initialize eUSCI
 }
 
 /**
@@ -110,17 +112,15 @@ void enableUART(uint32_t freq, uint32_t baud) {
  *   EUSCI_A_IE_TXCPTIE // Transmit complete interrupt enable
  */
 void enableInterruptsUART(interruptFuncPtr func, uint16_t interrupts) {
-	callback = func;
-	UCA0IE &= ~EUSCI_A_RXBUF_RXBUF_MASK;
-	UCA0IE |= interrupts;                       // Enable USCI_A0 RX interrupt
-	NVIC->ISER[0] = 1 << ((EUSCIA0_IRQn) & 31); // Enable eUSCIA0 interrupt in NVIC
+	if (func) callback = func;
+	EUSCI_A0->IE &= ~EUSCI_A_RXBUF_RXBUF_MASK; // ??????? RXBUFF?!?!?!?!?
+	EUSCI_A0->IE |= interrupts;                       // Enable USCI_A0 RX interrupt
+	NVIC_EnableIRQ(EUSCIA0_IRQn); // Enable eUSCIA0 interrupt in NVIC
 }
 
 void inline sendByteUART(uint8_t tx_data) {
-    P1OUT |= BIT0;                // Turn on LED1 to indicate ‘waiting to transmit’
-    while (!(UCA0IFG & UCTXIFG)); // Block until transmitter is ready
-    UCA0TXBUF = tx_data;          // Load data onto buffer
-    P1OUT &= ~BIT0;               // Turn off LED1 to indicate ‘transmitting has started’
+    while (!(EUSCI_A0->IFG & EUSCI_A_IFG_TXIFG)); // Block until transmitter is ready
+    EUSCI_A0->TXBUF = tx_data;          // Load data onto buffer
 }
 
 void sendBytesUART(uint8_t * array, uint32_t length) {
