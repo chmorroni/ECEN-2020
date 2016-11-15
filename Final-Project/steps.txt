@@ -1,5 +1,13 @@
 CAR:
 
+Libs:
+	serial
+	nrf
+	buffer
+	linked list
+	timers
+	logging
+
 Debugging:
 	Logging
 		Received packets
@@ -62,6 +70,7 @@ Debugging:
 Running:
 	Initialization
 		Setup NRF
+			TX Mode 
 	Catch exceptions
 		Send error signal (11 on turn bits)
 	Reading sensors

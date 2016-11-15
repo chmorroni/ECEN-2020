@@ -5,7 +5,16 @@
 #define BUFF_TYPE nrfCmd
 #include "Libs/buffer.h"
 #include "Libs/serial.h"
+#include "Libs/error.h"
+#include "Libs/helpers.h"
+#include "Libs/timers.h"
+#include "Libs/logging.h"
 
+void main(void) {
+
+}
+
+#ifdef TESTING
 #define PULSE_WIDTH (100)
 #define DUTY_CYCLE (0.01)
 #define RTC_KEY ((uint16_t) 0xA500)
@@ -31,7 +40,7 @@ void printNewline(void);
 
 void main(void) {
 	uint8_t resp = 0;
-	WDTCTL = WDTPW | WDTHOLD;                      // Stop watchdog timer
+	WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;                      // Stop watchdog timer
 
 	initBuff(&spiTXBuff, 6);
 	initBuff(&spiRXBuff, 6);
@@ -90,7 +99,7 @@ void main(void) {
 	                      EUSCI_A_CTLW0_SSEL__SMCLK |
 	                      EUSCI_A_CTLW0_STEM |   // STE used for slave
 	                      EUSCI_A_CTLW0_SWRST;   // STE used for slave
-	EUSCI_A1_SPI->BRW = 8;                      // Divide by enough to safely use 48MHz
+	EUSCI_A1_SPI->BRW = 8;                       // Divide by enough to safely use 48MHz
 	EUSCI_A1_SPI->STATW = 0;                     // Defaults
 
 	/* Setup pin for SPI
@@ -107,7 +116,6 @@ void main(void) {
 	EUSCI_A1_SPI->CTLW0 &= ~EUSCI_A_CTLW0_SWRST; // Release for operation
 	EUSCI_A1_SPI->IE = EUSCI_A_IE_TXIE |         // TX interrupt
 	                   EUSCI_A_IE_RXIE;          // RX interrupt
-	EUSCI_A1_SPI->IFG = 0;
 	NVIC_EnableIRQ(EUSCIA1_IRQn);
 
 	/* Setup extra pins to NRF
@@ -328,13 +336,10 @@ void UARTHandler(void) {
 
 void SPIHandler(void) {
 	nrfCmd command = 0;
-//	printf("In master handler: %x\n", EUSCI_A1_SPI->IFG);
 	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_RXIFG) {
-//		printf("In master rx\n");
 		addToBuff(&spiRXBuff, EUSCI_A1_SPI->RXBUF);
 	}
 	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_TXIFG) {
-//		printf("In master tx\n");
 		if (getFromBuff(&spiTXBuff, &command) == BUFF_NO_ERR) EUSCI_A1_SPI->TXBUF = command;
 		else EUSCI_A1_SPI->IE &= ~EUSCI_A_IE_TXIE;
 	}
@@ -342,13 +347,10 @@ void SPIHandler(void) {
 
 void SPISlaveHandler(void) {
 	uint8_t data = 0;
-//	printf("In slave handler: %x\n", EUSCI_A2_SPI->IFG);
 	if (EUSCI_A2_SPI->IFG & EUSCI_A_IFG_RXIFG) {
-//		printf("In slave rx\n");
 		addToBuff(&slaveRXBuff, EUSCI_A2_SPI->RXBUF - 1);
 	}
 	if (EUSCI_A2_SPI->IFG & EUSCI_A_IFG_TXIFG) {
-//		printf("In slave tx\n");
 		if (getFromBuff(&slaveTXBuff, &data) == BUFF_NO_ERR) EUSCI_A2_SPI->TXBUF = data;
 		else EUSCI_A2_SPI->IE &= ~EUSCI_A_IE_TXIE;
 	}
@@ -381,3 +383,4 @@ void configureButtons(void) {
 	P1->IE |= BIT1 | BIT4;      // Enable interrupt for buttons
 	NVIC_EnableIRQ(PORT1_IRQn); // Register port 1 interrupts with NVIC
 }
+#endif
