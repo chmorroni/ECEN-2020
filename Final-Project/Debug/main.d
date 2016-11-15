@@ -17,8 +17,11 @@ main.obj: ../Libs/nrf.h
 main.obj: ../Libs/buffer.h
 main.obj: /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdlib.h
 main.obj: /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/linkage.h
+main.obj: ../Libs/error.h
 main.obj: ../Libs/serial.h
 main.obj: ../Libs/helpers.h
+main.obj: ../Libs/timers.h
+main.obj: ../Libs/logging.h
 
 ../main.c: 
 /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdint.h: 
@@ -37,5 +40,8 @@ main.obj: ../Libs/helpers.h
 ../Libs/buffer.h: 
 /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdlib.h: 
 /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/linkage.h: 
+../Libs/error.h: 
 ../Libs/serial.h: 
 ../Libs/helpers.h: 
+../Libs/timers.h: 
+../Libs/logging.h: 

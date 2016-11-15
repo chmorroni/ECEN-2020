@@ -1,6 +1,8 @@
 #include "timers.h"
 #define MAX_TA0_PRESCALER 0xFFFF
 
+#define RTC_KEY ((uint16_t) 0xA500)
+
 /**
  * @desc Initializes the RTC
  * TODO

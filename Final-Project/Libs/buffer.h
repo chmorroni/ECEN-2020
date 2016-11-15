@@ -29,8 +29,8 @@ typedef struct {
 /**
  * Linked list based implementation
  */
-typedef struct {
-	Node * next;
+typedef struct Node {
+	struct Node * next;
 	BUFF_TYPE data;
 } Node;
 

@@ -128,7 +128,7 @@ error addToLLBuff(LLBuff * buff, BUFF_TYPE item) {
 	if (!buff) return ERR_NULL_PTR;
 	if (!llBuffInitialized(buff)) return ERR_UNINITIALIZED;
 	if (llBuffFull(buff)) return ERR_FULL;
-	if (!(node = malloc(sizeof (Node)))) return BUFF_LOW_MEM;
+	if (!(newNode = malloc(sizeof (Node)))) return ERR_OUT_OF_MEM;
 	newNode->next = NULL;
 	newNode->data = item;
 	if (llBuffEmpty(buff)) buff->head = newNode;
@@ -161,7 +161,7 @@ error getFromLLBuff(LLBuff * buff, BUFF_TYPE * container) {
 	*container = buff->head->data;
 	newHead = buff->head->next;
 	free(buff->head);
-	buff->head = nextHead;
+	buff->head = newHead;
 	if (buff->numItems == 1) buff->tail = NULL;
 	buff->numItems--;
 	return ERR_NO;

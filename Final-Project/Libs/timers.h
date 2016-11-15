@@ -47,7 +47,7 @@ void initRTC(void);
 /**
  *
  */
-error getTime(void);
+error getTime(uint16_t * hours, uint16_t * minutes, uint16_t * seconds);
 
 /**
  * @param freq is the frequency at which to pulse width modulate the output, use

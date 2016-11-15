@@ -10,8 +10,6 @@ static LLBuff uartBuff = {0};
 static commandFuncPtr commandHandler = NULL;
 static getLinePtr getLineHandler = NULL;
 static uint8_t gettingLine = 0;
-static uint8_t newData = 0;
-static char lastRead = '\0';
 
 void eUSCIUARTHandler(void) {
 	uint8_t data;
@@ -22,7 +20,7 @@ void eUSCIUARTHandler(void) {
 			static char * line = NULL;
 			static uint32_t charsRead = 0;
 			static uint32_t lineSize = 0;
-			static error err = NO_ERR;
+			static error err = ERR_NO;
 
 			if (data == '\r') {
 				gettingLine = 0;
@@ -42,13 +40,13 @@ void eUSCIUARTHandler(void) {
 				line = NULL;
 				charsRead = 0;
 				lineSize = 0;
-				err = NO_ERR;
+				err = ERR_NO;
 			}
 		}
 		else if (commandHandler) (*commandHandler)(uartModule->RXBUF);
 	}
 	if (uartModule->IFG & EUSCI_A_IFG_TXIFG) {
-		if (getFromLLBuff(&uartTXBuff, &data) == ERR_NO) uartModule->TXBUF = data;
+		if (getFromLLBuff(&uartBuff, &data) == ERR_NO) uartModule->TXBUF = data;
 		else uartModule->IE &= ~EUSCI_A_IE_TXIE;
 	}
 }
@@ -76,8 +74,8 @@ error configLogging(EUSCI_A_Type * module, uint32_t baud, uint32_t size) {
 }
 
 error startLogging(void) {
-	if (!module) return ERR_UNINITIALIZED;
-	return startUART(module);
+	if (!uartModule) return ERR_UNINITIALIZED;
+	return startUART(uartModule);
 }
 
 error enableCommands(commandFuncPtr callback) {

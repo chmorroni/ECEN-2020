@@ -73,9 +73,9 @@ error strToUInt32(char * string, uint32_t * container) {
     uint32_t num = 0;
     uint32_t oldNum = 0;
 	if (!string || !container) return ERR_NULL_PTR;
-	while (str[i]) {
-		if (str[i] < '0' || str[i] > '9') return ERR_NAN;
-		num += magnitude * (str[i] - 0x30);
+	while (string[i]) {
+		if (string[i] < '0' || string[i] > '9') return ERR_NAN;
+		num += magnitude * (string[i] - 0x30);
 		magnitude *= 10;
 		if (num < oldNum) return ERR_OVERFLOW; // Unsigned overflow, defined
 		oldNum = num;
@@ -89,9 +89,9 @@ error strToUInt64(char * string, uint64_t * container) {
     uint64_t num = 0;
     uint64_t oldNum = 0;
 	if (!string || !container) return ERR_NULL_PTR;
-	while (str[i]) {
-		if (str[i] < '0' || str[i] > '9') return ERR_NAN;
-		num += magnitude * (str[i] - 0x30);
+	while (string[i]) {
+		if (string[i] < '0' || string[i] > '9') return ERR_NAN;
+		num += magnitude * (string[i] - 0x30);
 		magnitude *= 10;
 		if (num < oldNum) return ERR_OVERFLOW; // Unsigned overflow, defined
 		oldNum = num;
