@@ -79,7 +79,7 @@ error configSPIMasterA(EUSCI_A_SPI_Type * module) {
 	                EUSCI_A_CTLW0_SSEL__SMCLK |
 	                EUSCI_A_CTLW0_STEM |   // STE used for slave
 	                EUSCI_A_CTLW0_SWRST;   // STE used for slave
-	module->BRW = 8;                       // Divide by enough to safely use 48MHz
+	module->BRW = 256;                    // Divide by enough to safely use 48MHz
 	module->STATW = 0;                     // Defaults
 	return ERR_NO;
 }
@@ -94,7 +94,7 @@ error configSPIMasterB(EUSCI_B_SPI_Type * module) {
 	                EUSCI_A_CTLW0_SSEL__SMCLK |
 	                EUSCI_A_CTLW0_STEM |   // STE used for slave
 	                EUSCI_A_CTLW0_SWRST;   // STE used for slave
-	module->BRW = 8;                       // Divide by enough to safely use 48MHz
+	module->BRW = 256;                    // Divide by enough to safely use 48MHz
 	module->STATW = 0;                     // Defaults
 	return ERR_NO;
 }

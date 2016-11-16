@@ -9,7 +9,7 @@ int32_t strLen(char * str) {
 	return len;
 }
 
-error uInt16ToStr(uint16_t num, char * string) {
+error uInt16ToStr(uint16_t num, char * string, uint8_t minWidth) {
     uint8_t i = 0;         // If number is zero, one char must still be transmitted: '0'
     uint8_t firstDigit;    // Used to diminish number of modulo operations
     uint16_t numCpy = num; // Don’t want to change num just yet
@@ -17,7 +17,8 @@ error uInt16ToStr(uint16_t num, char * string) {
     // Since we are writing the number from right to left, the top of the stack must
     // contain the one’s place. We do this by starting at the end. Therefore, we need to
     // know how long the output string will be:
-    for (i = 1; numCpy = (numCpy - (numCpy % 10)) / 10; i++); // i now holds index of '\0'
+    for (i = 1; numCpy = (numCpy - (numCpy % 10)) / 10; i++);
+    if (i < minWidth) i = minWidth;    // i now holds index of '\0'
     string[i] = '\0';
     do {
         i--;                           // Move down string
@@ -28,7 +29,7 @@ error uInt16ToStr(uint16_t num, char * string) {
     } while (i);
     return ERR_NO;
 }
-error uInt32ToStr(uint32_t num, char * string) {
+error uInt32ToStr(uint32_t num, char * string, uint8_t minWidth) {
     uint8_t i = 0;         // If number is zero, one char must still be transmitted: '0'
     uint8_t firstDigit;    // Used to diminish number of modulo operations
     uint32_t numCpy = num; // Don’t want to change num just yet
@@ -36,7 +37,8 @@ error uInt32ToStr(uint32_t num, char * string) {
     // Since we are writing the number from right to left, the top of the stack must
     // contain the one’s place. We do this by starting at the end. Therefore, we need to
     // know how long the output string will be:
-    for (i = 1; numCpy = (numCpy - (numCpy % 10)) / 10; i++); // i now holds index of '\0'
+    for (i = 1; numCpy = (numCpy - (numCpy % 10)) / 10; i++);
+    if (i < minWidth) i = minWidth;    // i now holds index of '\0'
     string[i] = '\0';
     do {
         i--;                           // Move down string
@@ -47,7 +49,7 @@ error uInt32ToStr(uint32_t num, char * string) {
     } while (i);
     return ERR_NO;
 }
-error uInt64ToStr(uint64_t num, char * string) {
+error uInt64ToStr(uint64_t num, char * string, uint8_t minWidth) {
     uint8_t i = 0;         // If number is zero, one char must still be transmitted: '0'
     uint8_t firstDigit;    // Used to diminish number of modulo operations
     uint64_t numCpy = num; // Don’t want to change num just yet
@@ -55,7 +57,8 @@ error uInt64ToStr(uint64_t num, char * string) {
     // Since we are writing the number from right to left, the top of the stack must
     // contain the one’s place. We do this by starting at the end. Therefore, we need to
     // know how long the output string will be:
-    for (i = 1; numCpy = (numCpy - (numCpy % 10)) / 10; i++); // i now holds index of '\0'
+    for (i = 1; numCpy = (numCpy - (numCpy % 10)) / 10; i++);
+    if (i < minWidth) i = minWidth;    // i now holds index of '\0'
     string[i] = '\0';
     do {
         i--;                           // Move down string

@@ -9,10 +9,286 @@
 #include "Libs/helpers.h"
 #include "Libs/timers.h"
 #include "Libs/logging.h"
+#include "Libs/portMapping.h"
+
+#define NRF_SEND() EUSCI_A1_SPI->IE |= EUSCI_A_IE_TXIE; \
+                   EUSCI_A2_SPI->IE |= EUSCI_A_IE_TXIE; \
+	               while (EUSCI_A1_SPI->STATW & EUSCI_A_STATW_BUSY || EUSCI_A2_SPI->STATW & EUSCI_A_STATW_BUSY);
+
+uint8_t nrfRXInt = 0;
+uint8_t nrfTXInt = 0;
+uint8_t rxStatusRead = 0;
+uint8_t txStatusRead = 0;
+uint8_t rxStatus = 0;
+uint8_t txStatus = 0;
+Buff mosiBuffTX = {0};
+Buff misoBuffTX = {0};
+Buff mosiBuffRX = {0};
+Buff misoBuffRX = {0};
+
+
+void setupRX(void);
+void setupTX(void);
+void clearNRFRXFlags(void);
+void clearNRFTXFlags(void);
 
 void main(void) {
-	WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;                      // Stop watchdog timer
+	uint8_t data = 0;
+	char str[13];
+	WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD; // Stop watchdog timer
 
+	setCPUFreq(FREQ_12);
+	configLogging(EUSCI_A0, 115200, 32);
+	P1->SEL0 |= BIT2 | BIT3;                  // 2 = RX 3 = TX
+	P1->SEL1 &= ~(BIT2 | BIT3);               // Set to primary function (01)
+	startLogging(EUSCIA0_IRQn);
+
+
+
+	initBuff(&mosiBuffTX, 10);
+	initBuff(&misoBuffTX, 10);
+	initBuff(&mosiBuffRX, 10);
+	initBuff(&misoBuffRX, 10);
+
+	initTimerA(TIMER_A0, 60);
+	/* Setup pin for PWM
+	 * Needs to attach to OUT1 of TA0 (See page 147 of specific DS)
+	 */
+	P2->DIR |= BIT2;
+	mapPin(PORT_2, PIN_2, PMAP_TA0CCR1A);
+	pwm(1, CCR1); // Duty cycle = 1 / 1000, use cap comp reg 1
+
+
+	// Setup interrupt and CE pins
+	P5->OUT &= ~BIT1;
+	P5->DIR |= BIT1;
+	P5->DIR &= ~BIT0;
+	P5->IFG = 0;
+	P5->IES |= BIT0;    // Interrupt fires on high to low transition
+	P5->IE |= BIT0;
+	NVIC_EnableIRQ(PORT5_IRQn);     // Register port 1 interrupts with NVIC
+	P6->OUT &= ~BIT1; // Stay high for constant Standby II mode.
+	P6->DIR |= BIT1;
+	P6->DIR &= ~BIT0;
+	P6->IFG = 0;
+	P6->IES |= BIT0;    // Interrupt fires on high to low transition
+	P6->IE |= BIT0;
+	NVIC_EnableIRQ(PORT6_IRQn);     // Register port 1 interrupts with NVIC
+
+
+	/* Configure SPI
+	 */
+	configSPIMasterA(EUSCI_A1_SPI);
+	configSPIMasterA(EUSCI_A2_SPI);
+	mapPin(PORT_2, PIN_3, PMAP_UCA1STE);
+	mapPin(PORT_2, PIN_5, PMAP_UCA1CLK);
+	mapPin(PORT_2, PIN_6, PMAP_UCA1SOMI);
+	mapPin(PORT_2, PIN_7, PMAP_UCA1SIMO);
+	mapPin(PORT_3, PIN_3, PMAP_UCA2STE);
+	mapPin(PORT_3, PIN_5, PMAP_UCA2CLK);
+	mapPin(PORT_3, PIN_6, PMAP_UCA2SOMI);
+	mapPin(PORT_3, PIN_7, PMAP_UCA2SIMO);
+	startSPIA(EUSCI_A1_SPI);
+	startSPIA(EUSCI_A2_SPI);
+	EUSCI_A1_SPI->IE |= EUSCI_A_IE_TXIE | EUSCI_A_IE_RXIE;
+	EUSCI_A2_SPI->IE |= EUSCI_A_IE_TXIE | EUSCI_A_IE_RXIE;
+	NVIC_EnableIRQ(EUSCIA1_IRQn);
+	NVIC_EnableIRQ(EUSCIA2_IRQn);
+
+
+
+	P1->DIR |= BIT0;
+	P1->OUT &= ~BIT0;
+	initTimerA(TIMER_A1, 1);
+	TIMER_A1->CTL |= TIMER_A_CTL_IE;
+//	TIMER_A1->CCTL[0] |= TIMER_A_CCTLN_CCIE;
+//	NVIC_EnableIRQ(TA1_0_IRQn);
+	NVIC_EnableIRQ(TA1_N_IRQn);
+
+	setupRX();
+	setupTX();
+
+	while(1) {
+		if (nrfRXInt) { // Received
+			logIS("                     Received");
+			addToBuff(&mosiBuffRX, NRF_R_RX_PAYLOAD);
+			addToBuff(&mosiBuffRX, NRF_WAIT_FOR_DATA);
+			NRF_SEND();
+			clearNRFRXFlags();
+			nrfRXInt = 0;
+		}
+		if (nrfTXInt) { // Received
+			logIS("Sent");
+			clearNRFTXFlags();
+			nrfTXInt = 0;
+		}
+		if (getFromBuff(&misoBuffRX, &data) == ERR_NO) {
+			logIS("                    RX Got: ");
+			uInt16ToStr(data, str, 3);
+			printStringIS(str);
+		}
+		if (getFromBuff(&misoBuffTX, &data) == ERR_NO) {
+			logIS("TX Got: ");
+			uInt16ToStr(data, str, 3);
+			printStringIS(str);
+		}
+	}
+}
+
+void clearNRFRXFlags(void) {
+	// Clear interrupt flags
+	NRF_SEND();
+	addToBuff(&mosiBuffRX, NRF_W_REGISTER(NRF_STATUS_ADDR));
+	addToBuff(&mosiBuffRX, NRF_STATUS_RX_DR |
+			               NRF_STATUS_TX_DS |
+						   NRF_STATUS_MAX_RT |
+						   NRF_STATUS_RX_P_NO);
+	NRF_SEND();
+}
+
+void clearNRFTXFlags(void) {
+	// Clear interrupt flags
+	NRF_SEND();
+	addToBuff(&mosiBuffTX, NRF_W_REGISTER(NRF_STATUS_ADDR));
+	addToBuff(&mosiBuffTX, NRF_STATUS_RX_DR |
+			               NRF_STATUS_TX_DS |
+						   NRF_STATUS_MAX_RT |
+						   NRF_STATUS_RX_P_NO);
+	NRF_SEND();
+}
+
+void setupRX(void) {
+	addToBuff(&mosiBuffRX, NRF_W_REGISTER(NRF_CONFIG_ADDR));
+	addToBuff(&mosiBuffRX, NRF_CONFIG_TX_DS_IIE |
+                           NRF_CONFIG_MAX_RT_IIE |
+			               NRF_CONFIG_PWR_UP |
+			               NRF_CONFIG_PRIM_RX);
+	NRF_SEND();
+	addToBuff(&mosiBuffRX, NRF_W_REGISTER(NRF_RX_PW_P0_ADDR));
+	addToBuff(&mosiBuffRX, 1);
+	NRF_SEND();
+	P5->OUT |= BIT1; // Start receiver
+}
+
+void setupTX(void) {
+	addToBuff(&mosiBuffTX, NRF_W_REGISTER(NRF_CONFIG_ADDR));
+	addToBuff(&mosiBuffTX, NRF_CONFIG_RX_DR_IIE |
+                           NRF_CONFIG_MAX_RT_IIE |
+			               NRF_CONFIG_PWR_UP |
+			               NRF_CONFIG_PRIM_TX);
+	NRF_SEND();
+	P6->OUT |= BIT1;
+}
+
+
+/*
+ *
+	// Setup receiver
+
+	addToBuff(&mosiBuffRX, NRF_R_REGISTER(NRF_RPD_ADDR));
+	addToBuff(&mosiBuffRX, NRF_WAIT_FOR_DATA);
+	NRF_SEND();
+	addToBuff(&mosiBuffRX, NRF_W_REGISTER(NRF_CONFIG_ADDR));
+	addToBuff(&mosiBuffRX, NRF_CONFIG_TX_DS_IIE |
+                           NRF_CONFIG_MAX_RT_IIE |
+			               NRF_CONFIG_PWR_UP |
+			               NRF_CONFIG_PRIM_RX);
+	// Setup transmitter
+	addToBuff(&mosiBuffTX, NRF_W_REGISTER(NRF_CONFIG_ADDR));
+	addToBuff(&mosiBuffTX, NRF_CONFIG_RX_DR_IIE |
+                           NRF_CONFIG_MAX_RT_IIE |
+			               NRF_CONFIG_PWR_UP |
+			               NRF_CONFIG_PRIM_TX);
+	logIS("Writing CONFIG");
+	NRF_SEND();
+	logIS("Flushing stuff");
+	// Setup transmitter
+	addToBuff(&mosiBuffRX, NRF_FLUSH_RX);
+	addToBuff(&mosiBuffTX, NRF_FLUSH_TX);
+	NRF_SEND();
+	// Setup transmitter
+	NRF_SEND();
+	logIS("Enabling NO_ACK stuff");
+	addToBuff(&mosiBuffTX, NRF_W_REGISTER(NRF_FEATURE_ADDR));
+	addToBuff(&mosiBuffTX, NRF_FEATURE_EN_DYN_ACK);
+	NRF_SEND();
+	logIS("Enabling cont wave");
+	addToBuff(&mosiBuffTX, NRF_W_REGISTER(NRF_RF_SETUP_ADDR));
+	addToBuff(&mosiBuffTX, NRF_RF_SETUP_CONT_WAVE |
+			               NRF_RF_SETUP_PLL_LOCK |
+						   NRF_RF_SETUP_RF_DR_HIGH |
+						   NRF_RF_SETUP_RF_PWR_0);
+	NRF_SEND();
+	logIS("Clearing flags");
+	clearNRFRXFlags();
+	clearNRFTXFlags();
+
+	P5->OUT |= BIT1;
+	P6->OUT |= BIT1;
+ */
+
+void TA1_N_IRQHandler(void) {
+	TIMER_A1->CTL &= ~TIMER_A_CTL_IFG;
+	P1->OUT ^= BIT0;
+
+//	logIS("Polling");
+	logIS("Sending 'A'");
+
+	addToBuff(&mosiBuffTX, NRF_W_TX_PAYLOAD);
+	addToBuff(&mosiBuffTX, 'A');
+	NRF_SEND();
+
+//	addToBuff(&mosiBuffRX, NRF_R_REGISTER(NRF_RPD_ADDR));
+//	addToBuff(&mosiBuffRX, NRF_WAIT_FOR_DATA);
+//	NRF_SEND();
+}
+
+void EUSCIA1_IRQHandler(void) {
+	uint8_t byte;
+	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_RXIFG) {
+		byte = EUSCI_A1_SPI->RXBUF;
+		if (!txStatusRead) {
+			txStatus = byte;
+			txStatusRead = 1;
+		}
+		addToBuff(&misoBuffTX, byte);
+	}
+	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_TXIFG) {
+		if (getFromBuff(&mosiBuffTX, &byte) == ERR_NO) EUSCI_A1_SPI->TXBUF = byte;
+		else {
+			EUSCI_A1_SPI->IE &= ~EUSCI_A_IE_TXIE;
+			txStatusRead = 0;
+		}
+	}
+}
+
+void EUSCIA2_IRQHandler(void) {
+	uint8_t byte;
+	if (EUSCI_A2_SPI->IFG & EUSCI_A_IFG_RXIFG) {
+		byte = EUSCI_A2_SPI->RXBUF;
+		if (!rxStatusRead) {
+			rxStatus = byte;
+			rxStatusRead = 1;
+		}
+		addToBuff(&misoBuffRX, byte);
+	}
+	if (EUSCI_A2_SPI->IFG & EUSCI_A_IFG_TXIFG) {
+		if (getFromBuff(&mosiBuffRX, &byte) == ERR_NO) EUSCI_A2_SPI->TXBUF = byte;
+		else {
+			EUSCI_A2_SPI->IE &= ~EUSCI_A_IE_TXIE;
+			rxStatusRead = 0;
+		}
+	}
+}
+
+void PORT5_IRQHandler (void) {
+	nrfRXInt = 1;
+	P5->IFG = 0;
+}
+
+void PORT6_IRQHandler (void) {
+	nrfTXInt = 1;
+	P6->IFG = 0;
 }
 
 #ifdef TESTING

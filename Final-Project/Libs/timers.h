@@ -49,11 +49,7 @@ void initRTC(void);
  */
 error getTime(uint16_t * hours, uint16_t * minutes, uint16_t * seconds);
 
-/**
- * @param freq is the frequency at which to pulse width modulate the output, use
- *        pwm1() to pwm4() to initiate the modulation
- */
-error initTA0(uint32_t freq);
+error initTimerA(Timer_A_Type * timer, float freq);
 
 /**
  * Start PWM output based on the frequency setup using the function initTA0().

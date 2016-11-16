@@ -106,6 +106,9 @@ extern void PORT6_IRQHandler    (void) __attribute__((weak,alias("Default_Handle
 
 /* User defined interrupts
  */
+extern void eUSCIUARTHandler(void);
+#ifdef TESTING
+
 extern void TA1Handler(void);
 extern void Port1Handler(void);
 extern void Port6Handler(void);
@@ -113,6 +116,8 @@ extern void UARTHandler(void);
 extern void SPIHandler(void);
 extern void SPISlaveHandler(void);
 extern void RTCHandler(void);
+
+#endif
 
 /* Interrupt vector table.  Note that the proper constructs must be placed on this to */
 /* ensure that it ends up at physical address 0x0000.0000 or at the start of          */
@@ -219,7 +224,7 @@ void (* const interruptVectors[])(void) =
     TA2_N_IRQHandler,                      /* TA2_N ISR                 */
     TA3_0_IRQHandler,                      /* TA3_0 ISR                 */
     TA3_N_IRQHandler,                      /* TA3_N ISR                 */
-    EUSCIA0_IRQHandler,                    /* EUSCIA0 ISR               */
+	eUSCIUARTHandler,                    /* EUSCIA0 ISR               */
     EUSCIA1_IRQHandler,                    /* EUSCIA1 ISR               */
     EUSCIA2_IRQHandler,                    /* EUSCIA2 ISR               */
     EUSCIA3_IRQHandler,                    /* EUSCIA3 ISR               */

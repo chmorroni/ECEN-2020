@@ -22,6 +22,8 @@ main.obj: ../Libs/serial.h
 main.obj: ../Libs/helpers.h
 main.obj: ../Libs/timers.h
 main.obj: ../Libs/logging.h
+main.obj: ../Libs/portMapping.h
+main.obj: ../Libs/helpers.h
 
 ../main.c: 
 /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdint.h: 
@@ -45,3 +47,5 @@ main.obj: ../Libs/logging.h
 ../Libs/helpers.h: 
 ../Libs/timers.h: 
 ../Libs/logging.h: 
+../Libs/portMapping.h: 
+../Libs/helpers.h: 

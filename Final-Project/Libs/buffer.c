@@ -27,10 +27,10 @@ inline int8_t llBuffEmpty(LLBuff * buff) {
  * TODO
  */
 inline static int8_t buffInitialized(Buff * buff) {
-	return !buff->size;
+	return !!buff->size;
 }
 static inline int8_t llBuffInitialized(LLBuff * buff) {
-	return !buff->size;
+	return !!buff->size;
 }
 
 /**
