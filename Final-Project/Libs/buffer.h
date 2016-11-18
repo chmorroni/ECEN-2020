@@ -1,7 +1,6 @@
 /**
- * Provides linked list based and array based buffers. All functions work the
- * same on both buffer types, simply pick which you want to use at the buffer's
- * declaration.
+ * Provides a fifo buffer of the type BUFF_TYPE, which can be defined before
+ * including the library. If not defined, it defaults to uint32_t.
  */
 
 #ifndef BUFFER
@@ -16,88 +15,75 @@
 #endif
 
 /**
- * Array based implementation, default
+ * The buffer struct, create one of these and pass its address to the initBuff
+ * function to allocate the space for storage.
  */
 typedef struct {
-	uint32_t head;            // Index where next item will be placed
-	uint32_t tail;            // Index of first item that will be removed
+	uint32_t head;     // Index where next item will be placed
+	uint32_t tail;     // Index of first item that will be removed
 	uint32_t numItems; // Current number of items in buffer
-	uint32_t size;              // Capacity of buffer
-	BUFF_TYPE * mem;            // Points to beginning of storage array
+	uint32_t size;     // Capacity of buffer
+	BUFF_TYPE * mem;   // Points to beginning of storage array
 } Buff;
-
-/**
- * Linked list based implementation
- */
-typedef struct Node {
-	struct Node * next;
-	BUFF_TYPE data;
-} Node;
-
-typedef struct {
-	Node * head;
-	Node * tail;
-	uint32_t numItems;
-	uint32_t size;
-} LLBuff;
-
 
 /**
  * ALLOCATES MEMORY!!! FREE WITH freeBuff
  *
- * @desc    Takes a created buffer and initializes it to the requested length
- * @param   buff - The address of any buffer
- * @param   size - the number of elements to allocate
- * @returns Success or the error that occurred
+ * @desc  Takes a created buffer and initializes it to the requested length.
+ * @param buff - The address of an uninitialized buffer (use freeBuff before
+ *               reinitializing an initialized buffer.
+ * @param size - The number of elements to store.
  */
 error initBuff(Buff * buff, uint32_t size);
-error initLLBuff(LLBuff * buff, uint32_t size);
 
 /**
- * @desc    Empties the buffer, keeps array, frees nodes in linked list
- * @param   buff - The address of an initialized buffer
- * @returns Success or the error that occurred
+ * @desc  Empties the buffer, does not free memory or change size.
+ * @param buff - The address of an initialized buffer.
  */
 error emptyBuff(Buff * buff);
-error emptyLLBuff(LLBuff * buff);
+
 /**
- * @desc    Frees any memory allocated from initBuff
- * @param   buff - The address of an initialized buffer
- * @returns Success or the error that occurred
+ * @desc  Frees any memory allocated from initBuff. This deletes all data and
+ *        resets the size to 0.
+ * @param buff - The address of an initialized buffer.
  */
 error freeBuff(Buff * buff);
-error freeLLBuff(LLBuff * buff);
 
 /**
- * @param   buff - The address of an initialized buffer
- * @returns 1 if the buffer is full, else 0
+ * @desc  Returns true if the buffer is full, else false. No error checking is
+ *        done.
+ * @param buff - The address of an initialized buffer.
  */
 inline int8_t buffFull(Buff * buff);
-inline int8_t llBuffFull(LLBuff * buff);
 
 /**
- * @param   buff - The address of an initialized buffer
- * @returns 1 if the buffer is empty, else 0
+ * @desc  Returns true if the buffer is empty, else false. No error checking is
+ *        done.
+ * @param buff - The address of an initialized buffer.
  */
 inline int8_t buffEmpty(Buff * buff);
-inline int8_t llBuffEmpty(LLBuff * buff);
 
 /**
- * @desc    Adds a given item to the buffer if it is not full
- * @param   buff - The address of an initialized buffer
- * @param   item - The item to add
- * @returns Success or the error that occurred
+ * @desc  Returns true if the buffer is initialized, else false. No error
+ *        checking is done.
+ * @param buff - The address of an initialized buffer.
+ */
+inline int8_t buffInitialized(Buff * buff);
+
+/**
+ * @desc  Adds a given item to the buffer if it is not full, returns the error
+ *        if it is full.
+ * @param buff - The address of an initialized buffer.
+ * @param item - The item to add.
  */
 error addToBuff(Buff * buff, BUFF_TYPE item);
-error addToLLBuff(LLBuff * buff, BUFF_TYPE item);
 
 /**
- * @desc    Gets the next item from the buffer if it is not empty
- * @param   buff - The address of an initialized buffer
- * @param   container - The address of the variable to put the item in
- * @returns Success or the error that occurred
+ * @desc  Gets the next item from the buffer if it is not empty, returns the
+ *        error if it is empty.
+ * @param buff - The address of an initialized buffer.
+ * @param container - The address of the variable to put the item in.
  */
 error getFromBuff(Buff * buff, BUFF_TYPE * container);
-error getFromLLBuff(LLBuff * buff, BUFF_TYPE * container);
 
 #endif

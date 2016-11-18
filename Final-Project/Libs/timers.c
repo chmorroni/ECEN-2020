@@ -1,39 +1,12 @@
 #include "timers.h"
 #define TA0_PRESCALER_MAX 64
 #define UINT16_T_MAX (0xFFFF)
-#define PWM_PRECISION (100)
 #define RTC_KEY ((uint16_t) 0xA500)
 
 /**
- * @desc Initializes the RTC
- * TODO
- */
-void initRTC(void) {
-	RTC_C->CTL0 = RTC_KEY;               // Unlock register
-	RTC_C->CTL0 = RTC_C_CTL0_RDYIE |     // Interrupt every second to update time
-	              RTC_KEY;               // Stay unlocked
-	RTC_C->CTL13 = RTC_C_CTL13_MODE;      // Calendar mode (0 is reserved)
-	RTC_C->CTL0 &= ~RTC_C_CTL0_KEY_MASK; // Relock by clearing key
-//	NVIC_EnableIRQ(RTC_C_IRQn);
-}
-
-error getTime(uint16_t * hours, uint16_t * minutes, uint16_t * seconds) {
-	if (!hours || !minutes || !seconds) return ERR_NULL_PTR;
-	*seconds = (RTC_C->TIM0 & RTC_C_TIM0_SEC_MASK) >> RTC_C_TIM0_SEC_OFS;
-	*minutes = (RTC_C->TIM0 & RTC_C_TIM0_MIN_MASK) >> RTC_C_TIM0_MIN_OFS;
-	*hours   = (RTC_C->TIM1 & RTC_C_TIM1_HOUR_MASK) >> RTC_C_TIM1_HOUR_OFS;
-	return ERR_NO;
-}
-
-/**
- *
- * @param freqDCO should be one of the below
- *   CS_CTL0_DCORSEL_0 // Nominal DCO Frequency Range (MHz): 1 to 2
- *   CS_CTL0_DCORSEL_1 // Nominal DCO Frequency Range (MHz): 2 to 4
- *   CS_CTL0_DCORSEL_2 // Nominal DCO Frequency Range (MHz): 4 to 8
- *   CS_CTL0_DCORSEL_3 // Nominal DCO Frequency Range (MHz): 8 to 16
- *   CS_CTL0_DCORSEL_4 // Nominal DCO Frequency Range (MHz): 16 to 32
- *   CS_CTL0_DCORSEL_5 // Nominal DCO Frequency Range (MHz): 32 to 64
+ * @desc  Sets the DCOCLK to the specified frequency, ACLK to REFOCLK, and SMCLK
+ *        and MCLK both to DCOCLK.
+ * @param freqDCO - The desired frequency to run DCOCLK at.
  */
 void setCPUFreq(cpuFreq freqDCO) {
 	/* Configure required clocks */
@@ -63,6 +36,38 @@ void setCPUFreq(cpuFreq freqDCO) {
 	CS->KEY = 0;                // lock CS module for register access
 }
 
+/**
+ * @desc  Initializes the RTC
+ */
+void initRTC(void) {
+	RTC_C->CTL0 = RTC_KEY;               // Unlock register
+	RTC_C->CTL0 = RTC_C_CTL0_RDYIE |     // Interrupt every second to update time
+	              RTC_KEY;               // Stay unlocked
+	RTC_C->CTL13 = RTC_C_CTL13_MODE;     // Calendar mode (0 is reserved)
+	RTC_C->CTL0 &= ~RTC_C_CTL0_KEY_MASK; // Relock by clearing key
+//	NVIC_EnableIRQ(RTC_C_IRQn);
+}
+
+/**
+ * @desc  Used to read time from the RTC.
+ * @param hours - The pointer to a variable to place hours into.
+ * @param minutes - The pointer to a variable to place minutes into.
+ * @param seconds - The pointer to a variable to place seconds into.
+ */
+error getTime(uint16_t * hours, uint16_t * minutes, uint16_t * seconds) {
+	if (!hours || !minutes || !seconds) return ERR_NULL_PTR;
+	*seconds = (RTC_C->TIM0 & RTC_C_TIM0_SEC_MASK) >> RTC_C_TIM0_SEC_OFS;
+	*minutes = (RTC_C->TIM0 & RTC_C_TIM0_MIN_MASK) >> RTC_C_TIM0_MIN_OFS;
+	*hours   = (RTC_C->TIM1 & RTC_C_TIM1_HOUR_MASK) >> RTC_C_TIM1_HOUR_OFS;
+	return ERR_NO;
+}
+
+/**
+ *  @desc Initializes a timer to the requested frequency. Can go from SMCLK to
+ *        0.008 Hz. The timer is put into up mode and CCRN registers are reset.
+ *  @param timer - The timer to initialize.
+ *  @param freq - The frequency with which the interrupt should fire.
+ */
 error initTimerA(Timer_A_Type * timer, float freq) {
 	float clkHz = 1500000 * (1 << ((CS->CTL0 & CS_CTL0_DCORSEL_MASK) >> CS_CTL0_DCORSEL_OFS));
 	float minFreq = clkHz / UINT16_T_MAX;
@@ -71,60 +76,75 @@ error initTimerA(Timer_A_Type * timer, float freq) {
 	uint16_t clk = TIMER_A_CTL_SSEL__SMCLK;
 	if (!timer) return ERR_NULL_PTR;
 	if (freq > clkHz) return ERR_PARAM_OUT_OF_BOUNDS;
-	if (freq < minFreq * PWM_PRECISION) {
+	// Runs through possible configurations of input dividers and clock sources
+	// until the frequency can be achieved. Errors out if if fails.
+	if (freq < minFreq * PWM_STEPS) {
 		ctl0ID = TIMER_A_CTL_ID__8;
 		clkHz /= 8;
 		minFreq /= 8;
-	}
-	if (freq < minFreq * PWM_PRECISION) {
-		ex0ID = TIMER_A_EX0_IDEX__8;
-		clkHz /= 8;
-		minFreq /= 8;
-	}
-	if (freq < minFreq * PWM_PRECISION) {
-		clk = TIMER_A_CTL_SSEL__ACLK;
-		clkHz = 32000;
-		minFreq = clkHz / UINT16_T_MAX;
-		ctl0ID = TIMER_A_CTL_ID__1;
-		ex0ID = TIMER_A_EX0_IDEX__1;
-		if (freq > clkHz) return ERR_PARAM_OUT_OF_BOUNDS;
-		if (freq < minFreq * PWM_PRECISION) {
-			ctl0ID = TIMER_A_CTL_ID__8;
-			clkHz /= 8;
-			minFreq /= 8;
-		}
-		if (freq < minFreq * PWM_PRECISION) {
+		if (freq < minFreq * PWM_STEPS) {
 			ex0ID = TIMER_A_EX0_IDEX__8;
 			clkHz /= 8;
 			minFreq /= 8;
 		}
+		if (freq < minFreq * PWM_STEPS) {
+			clk = TIMER_A_CTL_SSEL__ACLK; // Can't be achieved with SMCLK
+			clkHz = 32000;
+			minFreq = clkHz / UINT16_T_MAX;
+			ctl0ID = TIMER_A_CTL_ID__1;
+			ex0ID = TIMER_A_EX0_IDEX__1;
+			if (freq > clkHz) return ERR_PARAM_OUT_OF_BOUNDS;
+			if (freq < minFreq * PWM_STEPS) {
+				ctl0ID = TIMER_A_CTL_ID__8;
+				clkHz /= 8;
+				minFreq /= 8;
+				if (freq < minFreq * PWM_STEPS) {
+					ex0ID = TIMER_A_EX0_IDEX__8;
+					clkHz /= 8;
+					minFreq /= 8;
+					// Don't check PWM_STEPS, as the precision is secondary
+					// to getting the requested freq.
+					if (freq < minFreq) return ERR_PARAM_OUT_OF_BOUNDS;
+				}
+			}
+		}
 	}
-	timer->CCR[0] = 0;                          // Stop timer for config
-	timer->CTL = clk |                          // Use SMCLK
-	             ctl0ID |                       // Input divider
-	             TIMER_A_CTL_MC__UP;            // Count up to TA0CCR0
+	timer->CCR[0] = 0;                       // Stop timer for config
+	timer->CTL = clk |                       // Use SMCLK
+	             ctl0ID |                    // Input divider
+	             TIMER_A_CTL_MC__UP;         // Count up to TA0CCR0
 	timer->EX0 = ex0ID;
-	timer->CCTL[0] = 0;                         // Defaults look good
-	timer->CCTL[1] = TIMER_A_CCTLN_OUTMOD_0;    // Output bit, default 0
-	timer->CCTL[2] = TIMER_A_CCTLN_OUTMOD_0;    // Output bit, default 0
-	timer->CCTL[3] = TIMER_A_CCTLN_OUTMOD_0;    // Output bit, default 0
-	timer->CCTL[4] = TIMER_A_CCTLN_OUTMOD_0;    // Output bit, default 0
-	timer->CTL |= TIMER_A_CTL_CLR;              // Reset the timer
-	timer->CCR[0] = clkHz / freq;               // Start timer at 200Hz
-	if (freq < minFreq * PWM_PRECISION) return ERR_PARAM_OUT_OF_BOUNDS;
+	timer->CCTL[0] = 0;                      // Defaults look good
+	timer->CCTL[1] = TIMER_A_CCTLN_OUTMOD_0; // Output bit, default 0
+	timer->CCTL[2] = TIMER_A_CCTLN_OUTMOD_0; // Output bit, default 0
+	timer->CCTL[3] = TIMER_A_CCTLN_OUTMOD_0; // Output bit, default 0
+	timer->CCTL[4] = TIMER_A_CCTLN_OUTMOD_0; // Output bit, default 0
+	timer->CTL |= TIMER_A_CTL_CLR;           // Reset the timer
+	timer->CCR[0] = clkHz / freq;            // Start timer at 200Hz
 	return ERR_NO;
 }
 
+/**
+ * @desc  Start PWM output based on the frequency setup using the function
+ *        initTimerA() on the TIMER_A0 module. Map a port to PMAP_TA0CCRNA for
+ *        the PWM signal, where N corresponds to the pwm register you are using
+ *        (selected by ccrN).
+ * @param dutyCycle - A 1 to PWM_STEPS value that represents the time to
+ *                    stay high. Any value outside this range turns the pwm
+ *                    signal off.
+ * @param reg - The ccrN register to use. This corresponds to the output signal
+ *              you want to use with port mapping
+ */
 void pwm(uint8_t dutyCycle, ccrN reg) {
-	if (dutyCycle < 1 || dutyCycle > PWM_PRECISION) {            // Out of bounds, default to off
+	if (dutyCycle < 1 || dutyCycle > PWM_STEPS) {  // Out of bounds, default to off
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0;  // Output bit, default 0
 	}
-	else if (dutyCycle == PWM_PRECISION) {
-		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0 | // Output bit, set to 1
-		                      TIMER_A_CCTLN_OUT;
+	else if (dutyCycle == PWM_STEPS) {
+		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0 | // Output bit
+		                      TIMER_A_CCTLN_OUT;       // Set OUTN signal high
 	}
 	else {
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_7;  // Set / Reset
-		TIMER_A0->CCR[reg] = TIMER_A0->CCR[0] / PWM_PRECISION * dutyCycle;
+		TIMER_A0->CCR[reg] = TIMER_A0->CCR[0] / PWM_STEPS * dutyCycle;
 	}
 }

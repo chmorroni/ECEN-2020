@@ -6,7 +6,7 @@
 #include "error.h"
 
 typedef void (* commandFuncPtr)(uint8_t received);
-typedef void (* getLinePtr)(char * received, error err);
+typedef void (* getLinePtr)(char * line, error err);
 
 void eUSCIUARTHandler(void);
 

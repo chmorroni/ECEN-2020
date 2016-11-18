@@ -45,8 +45,13 @@ Running:
 
 Drivers:
 	Turning
-		2 pins: Turn/~Strait, Left/~Right (?)
-
+		Enable Pin: Turn / ~Strait
+		1A Pin: Left / ~Right
+		2A Pin: ~Left / Right
+	Motors:
+		Enable: PWM for coasting (Drive / ~Coast)
+		1A Pin: Foreward / ~Backward
+		2A Pin: ~Foreward / Backward
 
 CONTROLLER:
 
@@ -82,3 +87,11 @@ Running:
 Drivers:
 	Joysticks
 		2 pins: x(A), y(A)
+
+
+
+TODO:
+RTC interrupts
+ADC reading
+UART receiving
+	- SV interrupt

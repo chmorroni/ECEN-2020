@@ -1,18 +1,24 @@
 #include "serial.h"
 
+/**
+ * @desc  Sets up UART on the given eUSCI_A module to the specified baud rate.
+ *        Takes into account current DCOCLK freq and uses SMCLK, so make sure
+ *        SMCLK source is set to DCOCLK with no prescaler.
+ * @param module - Any of EUSCI_A0 to EUSCI_A3.
+ * @param baud - The integer baud rate desired.
+ */
 error configUART(EUSCI_A_Type * module, uint32_t baud) {
 	float mhz, n, n16, fracn;
 	uint32_t intn, brs;
 	if (!module) return ERR_NULL_PTR;
 
+	// Calculate current DCO frequency
 	mhz = 1.5 * (1 << ((CS->CTL0 & CS_CTL0_DCORSEL_MASK) >> CS_CTL0_DCORSEL_OFS));
 	if (baud > mhz * 1000000) return ERR_PARAM_OUT_OF_BOUNDS;
 
 	module->CTLW0 |= EUSCI_A_CTLW0_SWRST;       // Put eUSCI in reset
 	module->CTLW0 = EUSCI_A_CTLW0_SSEL__SMCLK | // Use SMCLK
 	                EUSCI_A_CTLW0_SWRST;        // Keep eUSCI in reset
-
-	if (!baud) baud = 9600;                     // Default to 9600
 	n = mhz * 1000000 / baud;                   // N = freqSMCLK / baud
 	n16 = n / 16;
 	intn = (uint32_t) (n > 16 ? n16 : n);       // INT(N/16)
@@ -55,86 +61,93 @@ error configUART(EUSCI_A_Type * module, uint32_t baud) {
 	      fracn >= 0.0715 ? 0x02 :
 	      fracn >= 0.0529 ? 0x01 : 0;
 
-	if (n > 16) {                                                              // Need to use oversampling mode
-		module->BRW = intn;                                                  // Set clock scaler to INT(N/16)
-		module->MCTLW = ((uint32_t) (fracn * 16)) << EUSCI_A_MCTLW_BRF_OFS | // INT([(N/16) – INT(N/16)] × 16
-		                  brs << EUSCI_A_MCTLW_BRS_OFS |                       // Modulation pattern (see table above)
-		                  EUSCI_A_MCTLW_OS16;                                  // Use modulator
+	if (n > 16) { // Need to use oversampling mode
+		// Set clock scaler to INT(N/16)
+		module->BRW = intn;
+		                // INT([(N/16) – INT(N/16)] × 16
+		module->MCTLW = ((uint32_t) (fracn * 16)) << EUSCI_A_MCTLW_BRF_OFS |
+		                // Modulation pattern (see table above)
+		                brs << EUSCI_A_MCTLW_BRS_OFS |
+						// Enable oversampling mode
+		                EUSCI_A_MCTLW_OS16;
 	}
-	else {                                              // Don't need to use oversampling mode
-		module->BRW = intn;                           // Set clock scaler to N
-		module->MCTLW = brs << EUSCI_A_MCTLW_BRS_OFS; // Modulation pattern (see table above)
+	else { // Don't need to use oversampling mode
+		// Set clock scaler to N
+		module->BRW = intn;
+		                // Modulation pattern (see table above)
+		module->MCTLW = brs << EUSCI_A_MCTLW_BRS_OFS;
 	}
 	return ERR_NO;
 }
 
-error configSPIMasterA(EUSCI_A_SPI_Type * module) {
+/**
+ * Does nothing until startSPI() is called on the module, configure port mapping
+ * after running config and before running start.
+ *
+ * @desc  Sets up the given eUSCI_A module to be a SPI master. Uses 4-wire mode,
+ *        STE is active low, clock is idle low, shifts data out on falling edge
+ *        and reads on rising edge, Clock is tied to the SMCLK and divided by 64
+ *        to keep it under 1MHz and give time for the interrupt to retrieve a
+ *        new packet from a buffer. Sends MSB first, packets are 8 bits.
+ * @param module - A eUSCI_AN module (N being the number of the module) to
+ *                 configure.
+ */
+error configSPIMaster(EUSCI_A_SPI_Type * module) {
 	if (!module) return ERR_NULL_PTR;
-	module->CTLW0 |= EUSCI_A_CTLW0_SWRST;  // Put eUSCI in reset
-	module->CTLW0 = EUSCI_A_CTLW0_CKPH |   // phase = 1 to shift on falling edge
+	module->CTLW0 |= EUSCI_A_CTLW0_SWRST;  // Put eUSCI_AN in reset
+	module->CTLW0 = EUSCI_A_CTLW0_CKPH |   // Shift on falling edge
 	                EUSCI_A_CTLW0_MSB |    // MSB first
 	                EUSCI_A_CTLW0_MST |    // Master
 	                EUSCI_A_CTLW0_MODE_2 | // 4-bit, slave active on STE low
 	                EUSCI_A_CTLW0_SYNC |   // SPI mode
-	                EUSCI_A_CTLW0_SSEL__SMCLK |
+	                EUSCI_A_CTLW0_SSEL__SMCLK | // Use SMCLK
 	                EUSCI_A_CTLW0_STEM |   // STE used for slave
-	                EUSCI_A_CTLW0_SWRST;   // STE used for slave
-	module->BRW = 256;                    // Divide by enough to safely use 48MHz
-	module->STATW = 0;                     // Defaults
-	return ERR_NO;
-}
-error configSPIMasterB(EUSCI_B_SPI_Type * module) {
-	if (!module) return ERR_NULL_PTR;
-	module->CTLW0 |= EUSCI_A_CTLW0_SWRST;  // Put eUSCI_A1 in reset
-	module->CTLW0 = EUSCI_A_CTLW0_CKPH |   // phase = 1 to shift on falling edge
-	                EUSCI_A_CTLW0_MSB |    // MSB first
-	                EUSCI_A_CTLW0_MST |    // Master
-	                EUSCI_A_CTLW0_MODE_2 | // 4-bit, slave active on STE low
-	                EUSCI_A_CTLW0_SYNC |   // SPI mode
-	                EUSCI_A_CTLW0_SSEL__SMCLK |
-	                EUSCI_A_CTLW0_STEM |   // STE used for slave
-	                EUSCI_A_CTLW0_SWRST;   // STE used for slave
-	module->BRW = 256;                    // Divide by enough to safely use 48MHz
+	                EUSCI_A_CTLW0_SWRST;   // Stay in reset
+	module->BRW = 64;                      // Divide by enough to safely use 48MHz
 	module->STATW = 0;                     // Defaults
 	return ERR_NO;
 }
 
-error configSPISlaveA(EUSCI_A_SPI_Type * module) {
+/**
+ * Does nothing until startSPI() is called on the module, configure port mapping
+ * after running config and before running start.
+ *
+ * @desc  Sets up the given eUSCI_A module to be a SPI slave. Uses 4-wire mode,
+ *        STE is active low, clock is idle low, shifts data out on falling edge
+ *        and reads on rising edge. Sends MSB first, packets are 8 bits.
+ * @param module - A eUSCI_AN module (N being the number of the module) to
+ *                 configure.
+ */
+error configSPISlave(EUSCI_A_SPI_Type * module) {
 	if (!module) return ERR_NULL_PTR;
-	module->CTLW0 |= EUSCI_A_CTLW0_SWRST;  // Put eUSCI_A2 in reset
-	module->CTLW0 = EUSCI_A_CTLW0_CKPH |
+	module->CTLW0 |= EUSCI_A_CTLW0_SWRST;  // Put eUSCI_AN in reset
+	module->CTLW0 = EUSCI_A_CTLW0_CKPH |   // Shift on falling edge
 	                EUSCI_A_CTLW0_MSB |    // MSB first
 	                EUSCI_A_CTLW0_MODE_2 | // 4-bit, slave active on STE low
 	                EUSCI_A_CTLW0_SYNC |   // SPI mode
-	                EUSCI_A_CTLW0_SWRST;   // STE used for slave
-	module->STATW = 0;                     // Defaults
-	return ERR_NO;
-}
-error configSPISlaveB(EUSCI_B_SPI_Type * module) {
-	if (!module) return ERR_NULL_PTR;
-	module->CTLW0 |= EUSCI_A_CTLW0_SWRST;  // Put eUSCI_A2 in reset
-	module->CTLW0 = EUSCI_A_CTLW0_CKPH |
-	                EUSCI_A_CTLW0_MSB |    // MSB first
-	                EUSCI_A_CTLW0_MODE_2 | // 4-bit, slave active on STE low
-	                EUSCI_A_CTLW0_SYNC |   // SPI mode
-	                EUSCI_A_CTLW0_SWRST;   // STE used for slave
+	                EUSCI_A_CTLW0_SWRST;   // Stay in reset
 	module->STATW = 0;                     // Defaults
 	return ERR_NO;
 }
 
+/**
+ * @desc  Release the given module for operation after calling configUART() and
+ *        configuring the required port mapping.
+ * @param module - The eUSCI_AN module to to start.
+ */
 error startUART(EUSCI_A_Type * module) {
 	if (!module) return ERR_NULL_PTR;
 	module->CTLW0 &= ~EUSCI_A_CTLW0_SWRST; // Release for operation
 	return ERR_NO;
 }
 
-error startSPIA(EUSCI_A_SPI_Type * module) {
+/**
+ * @desc  Release the given module for operation after calling configSPI() and
+ *        configuring the required port mapping.
+ * @param module - The eUSCI_AN module to to start.
+ */
+error startSPI(EUSCI_A_SPI_Type * module) {
 	if (!module) return ERR_NULL_PTR;
 	module->CTLW0 &= ~EUSCI_A_CTLW0_SWRST; // Release for operation
-	return ERR_NO;
-}
-error startSPIB(EUSCI_B_SPI_Type * module) {
-	if (!module) return ERR_NULL_PTR;
-	module->CTLW0 &= ~EUSCI_B_CTLW0_SWRST; // Release for operation
 	return ERR_NO;
 }

@@ -13,6 +13,11 @@ typedef enum {
 	ERR_NO = 0
 } error;
 
+/**
+ * @desc  Returns a pointer to a static string that provides a wordier
+ *        description of the error, useful for logging errors.
+ * @param err - The error to describe.
+ */
 char * errorToStr(error err);
 
 #endif

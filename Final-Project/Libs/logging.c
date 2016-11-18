@@ -11,6 +11,7 @@ static commandFuncPtr commandHandler = NULL;
 static getLinePtr getLineHandler = NULL;
 
 #define GETTING_LINE (0x1)
+#define LOGGING      (0x2)
 static uint8_t flags = 0;
 
 
@@ -24,19 +25,29 @@ void eUSCIUARTHandler(void) {
 			static uint32_t charsRead = 0;
 			static uint32_t lineSize = 0;
 			static error err = ERR_NO;
-			if (data == '\r') {
-				flags &= ~GETTING_LINE;
-				data = '\0';
+			charsRead++;
+			if (data == '\r') {             // User is done
+				flags &= ~GETTING_LINE;     // Stop getting line
+				data = '\0';                // Push null terminator
 			}
-			if (charsRead + 1 > lineSize) {
-				char * newLine = realloc(line, lineSize * 2 + 1);
-				if (!newLine) {
+			else printCharIS(data);
+			if (charsRead + 1 > lineSize) { // Ran out of room
+				char * newLine = NULL;
+				if (!lineSize) {
+					lineSize = 2;
+					newLine = malloc(lineSize); // The first char and a '\0'
+				}
+				else {
+					lineSize = lineSize * 2;
+					newLine = realloc(line, lineSize); // Try to get more
+				}
+				if (!newLine) {             // Crap...
 					flags &= ~GETTING_LINE;
 					err = ERR_OUT_OF_MEM;
 				}
 				else line = newLine;
 			}
-			if (line) line[charsRead++] = data;
+			if (line && err == ERR_NO) line[charsRead - 1] = data;
 			if (!(flags & GETTING_LINE)) { // Done
 				getLineHandler(line, err);
 				line = NULL;
@@ -45,7 +56,12 @@ void eUSCIUARTHandler(void) {
 				err = ERR_NO;
 			}
 		}
-		else if (commandHandler) (*commandHandler)(uartModule->RXBUF);
+		else if (commandHandler) {
+			printCharIS(data);
+			printCharIS('\n');
+			printCharIS('\r');
+			(*commandHandler)(data);
+		}
 	}
 	if (uartModule->IFG & EUSCI_A_IFG_TXIFG) {
 		if (getFromBuff(&uartBuff, &data) == ERR_NO) uartModule->TXBUF = data;
@@ -120,18 +136,18 @@ error log(char * string) {
 	char num[6];
 	uint16_t hours = 0, minutes = 0, seconds = 0;
 	getTime(&hours, &minutes, &seconds);
-	uInt16ToStr(hours, num, 2);
-	printChar('\n');
-	printChar('\r');
+	uIntToStr(hours, num, 2);
 	printString(num);
 	printChar(':');
-	uInt16ToStr(minutes, num, 2);
+	uIntToStr(minutes, num, 2);
 	printString(num);
 	printChar(':');
-	uInt16ToStr(seconds, num, 2);
+	uIntToStr(seconds, num, 2);
 	printString(num);
 	printString(" - ");
 	printString(string);
+	printChar('\n');
+	printChar('\r');
 	return ERR_NO;
 }
 
@@ -141,18 +157,20 @@ error logIS(char * string) {
 	char num[6];
 	uint16_t hours = 0, minutes = 0, seconds = 0;
 	getTime(&hours, &minutes, &seconds);
-	uInt16ToStr(hours, num, 2);
+	uIntToStr(hours, num, 2);
 	printCharIS('\n');
 	printCharIS('\r');
 	printStringIS(num);
 	printCharIS(':');
-	uInt16ToStr(minutes, num, 2);
+	uIntToStr(minutes, num, 2);
 	printStringIS(num);
 	printCharIS(':');
-	uInt16ToStr(seconds, num, 2);
+	uIntToStr(seconds, num, 2);
 	printStringIS(num);
 	printStringIS(" - ");
 	printStringIS(string);
+	printCharIS('\n');
+	printCharIS('\r');
 	return ERR_NO;
 }
 

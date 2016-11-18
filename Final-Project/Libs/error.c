@@ -1,7 +1,16 @@
 #include "error.h"
 
+/**
+ * @desc  Returns a pointer to a static string that provides a wordier
+ *        description of the error, useful for logging errors.
+ * @param err - The error to describe.
+ */
 char * errorToStr(error err) {
 	switch (err) {
+	case ERR_FULL:
+		return "full";
+	case ERR_EMPTY:
+		return "empty";
 	case ERR_OVERFLOW:
 		return "overflow";
 	case ERR_NAN:
@@ -16,5 +25,7 @@ char * errorToStr(error err) {
 		return "passed a null pointer";
 	case ERR_NO:
 		return "no error";
+	default:
+		return "Error in error.c! No description available.";
 	}
 }
