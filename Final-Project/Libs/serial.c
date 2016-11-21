@@ -13,7 +13,7 @@ error configUART(EUSCI_A_Type * module, uint32_t baud) {
 	if (!module) return ERR_NULL_PTR;
 
 	// Calculate current DCO frequency
-	mhz = 1.5 * (1 << ((CS->CTL0 & CS_CTL0_DCORSEL_MASK) >> CS_CTL0_DCORSEL_OFS));
+	mhz = 1.555 * (1 << ((CS->CTL0 & CS_CTL0_DCORSEL_MASK) >> CS_CTL0_DCORSEL_OFS));
 	if (baud > mhz * 1000000) return ERR_PARAM_OUT_OF_BOUNDS;
 
 	module->CTLW0 |= EUSCI_A_CTLW0_SWRST;       // Put eUSCI in reset
@@ -103,7 +103,7 @@ error configSPIMaster(EUSCI_A_SPI_Type * module) {
 	                EUSCI_A_CTLW0_SSEL__SMCLK | // Use SMCLK
 	                EUSCI_A_CTLW0_STEM |   // STE used for slave
 	                EUSCI_A_CTLW0_SWRST;   // Stay in reset
-	module->BRW = 64;                      // Divide by enough to safely use 48MHz
+	module->BRW = 0xFF;                   // Divide by enough to safely use 48MHz
 	module->STATW = 0;                     // Defaults
 	return ERR_NO;
 }

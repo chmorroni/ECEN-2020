@@ -3,6 +3,14 @@
 #define UINT16_T_MAX (0xFFFF)
 #define RTC_KEY ((uint16_t) 0xA500)
 
+typedef struct {
+	uint16_t hours;
+	uint16_t minutes;
+	uint16_t seconds;
+} time;
+
+static time current = {0};
+
 /**
  * @desc  Sets the DCOCLK to the specified frequency, ACLK to REFOCLK, and SMCLK
  *        and MCLK both to DCOCLK.
@@ -37,6 +45,16 @@ void setCPUFreq(cpuFreq freqDCO) {
 }
 
 /**
+ *
+ */
+void RTC_C_IRQHandler(void) {
+	RTC_C->IV; // Clear interrupt
+	current.seconds = (RTC_C->TIM0 & RTC_C_TIM0_SEC_MASK) >> RTC_C_TIM0_SEC_OFS;
+	current.minutes = (RTC_C->TIM0 & RTC_C_TIM0_MIN_MASK) >> RTC_C_TIM0_MIN_OFS;
+	current.hours   = (RTC_C->TIM1 & RTC_C_TIM1_HOUR_MASK) >> RTC_C_TIM1_HOUR_OFS;
+}
+
+/**
  * @desc  Initializes the RTC
  */
 void initRTC(void) {
@@ -45,21 +63,20 @@ void initRTC(void) {
 	              RTC_KEY;               // Stay unlocked
 	RTC_C->CTL13 = RTC_C_CTL13_MODE;     // Calendar mode (0 is reserved)
 	RTC_C->CTL0 &= ~RTC_C_CTL0_KEY_MASK; // Relock by clearing key
-//	NVIC_EnableIRQ(RTC_C_IRQn);
+	NVIC_EnableIRQ(RTC_C_IRQn);
 }
 
 /**
  * @desc  Used to read time from the RTC.
- * @param hours - The pointer to a variable to place hours into.
- * @param minutes - The pointer to a variable to place minutes into.
- * @param seconds - The pointer to a variable to place seconds into.
  */
-error getTime(uint16_t * hours, uint16_t * minutes, uint16_t * seconds) {
-	if (!hours || !minutes || !seconds) return ERR_NULL_PTR;
-	*seconds = (RTC_C->TIM0 & RTC_C_TIM0_SEC_MASK) >> RTC_C_TIM0_SEC_OFS;
-	*minutes = (RTC_C->TIM0 & RTC_C_TIM0_MIN_MASK) >> RTC_C_TIM0_MIN_OFS;
-	*hours   = (RTC_C->TIM1 & RTC_C_TIM1_HOUR_MASK) >> RTC_C_TIM1_HOUR_OFS;
-	return ERR_NO;
+inline uint8_t getHours(void) {
+	return current.hours;
+}
+inline uint8_t getMinutes(void) {
+	return current.minutes;
+}
+inline uint8_t getSeconds(void) {
+	return current.seconds;
 }
 
 /**
@@ -78,32 +95,30 @@ error initTimerA(Timer_A_Type * timer, float freq) {
 	if (freq > clkHz) return ERR_PARAM_OUT_OF_BOUNDS;
 	// Runs through possible configurations of input dividers and clock sources
 	// until the frequency can be achieved. Errors out if if fails.
-	if (freq < minFreq * PWM_STEPS) {
+	if (freq < minFreq) {
 		ctl0ID = TIMER_A_CTL_ID__8;
 		clkHz /= 8;
 		minFreq /= 8;
-		if (freq < minFreq * PWM_STEPS) {
+		if (freq < minFreq) {
 			ex0ID = TIMER_A_EX0_IDEX__8;
 			clkHz /= 8;
 			minFreq /= 8;
 		}
-		if (freq < minFreq * PWM_STEPS) {
+		if (freq < minFreq) {
 			clk = TIMER_A_CTL_SSEL__ACLK; // Can't be achieved with SMCLK
 			clkHz = 32000;
 			minFreq = clkHz / UINT16_T_MAX;
 			ctl0ID = TIMER_A_CTL_ID__1;
 			ex0ID = TIMER_A_EX0_IDEX__1;
 			if (freq > clkHz) return ERR_PARAM_OUT_OF_BOUNDS;
-			if (freq < minFreq * PWM_STEPS) {
+			if (freq < minFreq) {
 				ctl0ID = TIMER_A_CTL_ID__8;
 				clkHz /= 8;
 				minFreq /= 8;
-				if (freq < minFreq * PWM_STEPS) {
+				if (freq < minFreq) {
 					ex0ID = TIMER_A_EX0_IDEX__8;
 					clkHz /= 8;
 					minFreq /= 8;
-					// Don't check PWM_STEPS, as the precision is secondary
-					// to getting the requested freq.
 					if (freq < minFreq) return ERR_PARAM_OUT_OF_BOUNDS;
 				}
 			}
@@ -120,7 +135,7 @@ error initTimerA(Timer_A_Type * timer, float freq) {
 	timer->CCTL[3] = TIMER_A_CCTLN_OUTMOD_0; // Output bit, default 0
 	timer->CCTL[4] = TIMER_A_CCTLN_OUTMOD_0; // Output bit, default 0
 	timer->CTL |= TIMER_A_CTL_CLR;           // Reset the timer
-	timer->CCR[0] = clkHz / freq;            // Start timer at 200Hz
+	timer->CCR[0] = clkHz / freq;            // Start timer
 	return ERR_NO;
 }
 
@@ -129,22 +144,22 @@ error initTimerA(Timer_A_Type * timer, float freq) {
  *        initTimerA() on the TIMER_A0 module. Map a port to PMAP_TA0CCRNA for
  *        the PWM signal, where N corresponds to the pwm register you are using
  *        (selected by ccrN).
- * @param dutyCycle - A 1 to PWM_STEPS value that represents the time to
+ * @param dutyCycle - A 0 to 1 value that represents the % time  to
  *                    stay high. Any value outside this range turns the pwm
  *                    signal off.
  * @param reg - The ccrN register to use. This corresponds to the output signal
  *              you want to use with port mapping
  */
-void pwm(uint8_t dutyCycle, ccrN reg) {
-	if (dutyCycle < 1 || dutyCycle > PWM_STEPS) {  // Out of bounds, default to off
+void pwm(float dutyCycle, ccrN reg) {
+	if (dutyCycle <= 0 || dutyCycle > 1) {     // Out of bounds / off -> default to off
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0;  // Output bit, default 0
 	}
-	else if (dutyCycle == PWM_STEPS) {
+	else if (dutyCycle == 1) {
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0 | // Output bit
 		                      TIMER_A_CCTLN_OUT;       // Set OUTN signal high
 	}
 	else {
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_7;  // Set / Reset
-		TIMER_A0->CCR[reg] = TIMER_A0->CCR[0] / PWM_STEPS * dutyCycle;
+		TIMER_A0->CCR[reg] = (uint16_t) (TIMER_A0->CCR[0] * dutyCycle);
 	}
 }

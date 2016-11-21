@@ -95,3 +95,4 @@ RTC interrupts
 ADC reading
 UART receiving
 	- SV interrupt
+		* pg 127 - set / clear pendSV

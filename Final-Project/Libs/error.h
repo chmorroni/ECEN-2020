@@ -2,6 +2,8 @@
 #define ERROR
 
 typedef enum {
+	ERR_BUSY = -10,
+	ERR_RACE_COND = -9,
 	ERR_FULL = -8,
 	ERR_EMPTY = -7,
 	ERR_OVERFLOW = -6,
