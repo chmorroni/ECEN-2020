@@ -16,6 +16,7 @@ typedef enum {
 
 inline int32_t strLen(char * str);
 error uIntToStr(uint64_t num, char * string, uint8_t minWidth);
+
 /**
  * String should be at least 2 * bytesToPrint + 3 ('0' + 'x' + 2 chars per byte + '\0'
  */

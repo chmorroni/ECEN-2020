@@ -58,11 +58,10 @@ void initRTC(void);
 
 /**
  * @desc  Used to read time from the RTC.
- * @param hours - The pointer to a variable to place hours into.
- * @param minutes - The pointer to a variable to place minutes into.
- * @param seconds - The pointer to a variable to place seconds into.
  */
-error getTime(uint16_t * hours, uint16_t * minutes, uint16_t * seconds);
+inline uint8_t getHours(void);
+inline uint8_t getMinutes(void);
+inline uint8_t getSeconds(void);
 
 /**
  *  @desc Initializes a timer to the requested frequency. Can go from SMCLK to
@@ -83,6 +82,6 @@ error initTimerA(Timer_A_Type * timer, float freq);
  * @param reg - The ccrN register to use. This corresponds to the output signal
  *              you want to use with port mapping
  */
-void pwm(uint8_t dutyCycle, ccrN reg);
+void pwm(float dutyCycle, ccrN reg);
 
 #endif

@@ -7,6 +7,8 @@
  */
 char * errorToStr(error err) {
 	switch (err) {
+	case ERR_RACE_COND:
+		return "race condition";
 	case ERR_FULL:
 		return "full";
 	case ERR_EMPTY:

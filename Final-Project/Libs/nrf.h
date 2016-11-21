@@ -42,7 +42,7 @@ typedef uint8_t nrfCmd;
 #define NRF_FEATURE_EN_DYN_ACK  (0x01)
 
 /* Command encodings (Table 19) */
-#define NRF_R_REGISTER(addr)    ((nrfCmd) addr)        // Read specified register
+#define NRF_R_REGISTER(addr)    ((nrfCmd) addr)          // Read specified register
 #define NRF_W_REGISTER(addr)    ((nrfCmd) (0x20 | addr)) // Write specified register
 #define NRF_R_RX_PAYLOAD        ((nrfCmd) 0x61)
 #define NRF_W_TX_PAYLOAD        ((nrfCmd) 0xA0)

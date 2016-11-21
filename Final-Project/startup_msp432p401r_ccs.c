@@ -104,20 +104,10 @@ extern void PORT4_IRQHandler    (void) __attribute__((weak,alias("Default_Handle
 extern void PORT5_IRQHandler    (void) __attribute__((weak,alias("Default_Handler")));
 extern void PORT6_IRQHandler    (void) __attribute__((weak,alias("Default_Handler")));
 
-/* User defined interrupts
+/**
+ * User defined interrupts
  */
 extern void eUSCIUARTHandler(void);
-#ifdef TESTING
-
-extern void TA1Handler(void);
-extern void Port1Handler(void);
-extern void Port6Handler(void);
-extern void UARTHandler(void);
-extern void SPIHandler(void);
-extern void SPISlaveHandler(void);
-extern void RTCHandler(void);
-
-#endif
 
 /* Interrupt vector table.  Note that the proper constructs must be placed on this to */
 /* ensure that it ends up at physical address 0x0000.0000 or at the start of          */
@@ -125,70 +115,6 @@ extern void RTCHandler(void);
 #pragma RETAIN(interruptVectors)
 #pragma DATA_SECTION(interruptVectors, ".intvecs")
 void (* const interruptVectors[])(void) =
-#ifdef TESTING
-{
-
-    (void (*)(void))((uint32_t)&__STACK_END),
-                                           /* The initial stack pointer */
-    Reset_Handler,                         /* The reset handler         */
-    NMI_Handler,                           /* The NMI handler           */
-    HardFault_Handler,                     /* The hard fault handler    */
-    MemManage_Handler,                     /* The MPU fault handler     */
-    BusFault_Handler,                      /* The bus fault handler     */
-    UsageFault_Handler,                    /* The usage fault handler   */
-    0,                                     /* Reserved                  */
-    0,                                     /* Reserved                  */
-    0,                                     /* Reserved                  */
-    0,                                     /* Reserved                  */
-    SVC_Handler,                           /* SVCall handler            */
-    DebugMon_Handler,                      /* Debug monitor handler     */
-    0,                                     /* Reserved                  */
-    PendSV_Handler,                        /* The PendSV handler        */
-    SysTick_Handler,                       /* The SysTick handler       */
-    PSS_IRQHandler,                        /* PSS ISR                   */
-    CS_IRQHandler,                         /* CS ISR                    */
-    PCM_IRQHandler,                        /* PCM ISR                   */
-    WDT_A_IRQHandler,                      /* WDT ISR                   */
-    FPU_IRQHandler,                        /* FPU ISR                   */
-    FLCTL_IRQHandler,                      /* FLCTL ISR                 */
-    COMP_E0_IRQHandler,                    /* COMP0 ISR                 */
-    COMP_E1_IRQHandler,                    /* COMP1 ISR                 */
-	TA0_0_IRQHandler,                      /* TA0_0 ISR                 */
-	TA0_N_IRQHandler,                      /* TA0_N ISR                 */
-	TA1Handler,                            /* TA1_0 ISR *****************/
-	TA1_N_IRQHandler,                      /* TA1_N ISR                 */
-    TA2_0_IRQHandler,                      /* TA2_0 ISR                 */
-    TA2_N_IRQHandler,                      /* TA2_N ISR                 */
-    TA3_0_IRQHandler,                      /* TA3_0 ISR                 */
-    TA3_N_IRQHandler,                      /* TA3_N ISR                 */
-	UARTHandler,                           /* EUSCIA0 ISR ***************/
-	SPIHandler,                            /* EUSCIA1 ISR ***************/
-	SPISlaveHandler,                       /* EUSCIA2 ISR ***************/
-    EUSCIA3_IRQHandler,                    /* EUSCIA3 ISR               */
-    EUSCIB0_IRQHandler,                    /* EUSCIB0 ISR               */
-    EUSCIB1_IRQHandler,                    /* EUSCIB1 ISR               */
-    EUSCIB2_IRQHandler,                    /* EUSCIB2 ISR               */
-    EUSCIB3_IRQHandler,                    /* EUSCIB3 ISR               */
-    ADC14_IRQHandler,                      /* ADC14 ISR                 */
-    T32_INT1_IRQHandler,                   /* T32_INT1 ISR              */
-    T32_INT2_IRQHandler,                   /* T32_INT2 ISR              */
-    T32_INTC_IRQHandler,                   /* T32_INTC ISR              */
-    AES256_IRQHandler,                     /* AES ISR                   */
-	RTCHandler,                            /* RTC ISR *******************/
-    DMA_ERR_IRQHandler,                    /* DMA_ERR ISR               */
-    DMA_INT3_IRQHandler,                   /* DMA_INT3 ISR              */
-    DMA_INT2_IRQHandler,                   /* DMA_INT2 ISR              */
-    DMA_INT1_IRQHandler,                   /* DMA_INT1 ISR              */
-    DMA_INT0_IRQHandler,                   /* DMA_INT0 ISR              */
-	Port1Handler,                          /* PORT1 ISR *****************/
-    PORT2_IRQHandler,                      /* PORT2 ISR                 */
-    PORT3_IRQHandler,                      /* PORT3 ISR                 */
-    PORT4_IRQHandler,                      /* PORT4 ISR                 */
-    PORT5_IRQHandler,                      /* PORT5 ISR                 */
-	Port6Handler                           /* PORT6 ISR *****************/
-
-};
-#else
 
 {
     (void (*)(void))((uint32_t)&__STACK_END),
@@ -250,7 +176,6 @@ void (* const interruptVectors[])(void) =
     PORT5_IRQHandler,                      /* PORT5 ISR                 */
     PORT6_IRQHandler                       /* PORT6 ISR                 */
 };
-#endif
 
 /* Forward declaration of the default fault handlers. */
 /* This is the code that gets called when the processor first starts execution */

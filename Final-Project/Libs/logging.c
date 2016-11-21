@@ -8,75 +8,36 @@
 static EUSCI_A_Type * uartModule = NULL;
 static Buff uartBuff = {0};
 static commandFuncPtr commandHandler = NULL;
+static getCharPtr getCharHandler = NULL;
 static getLinePtr getLineHandler = NULL;
-
-#define GETTING_LINE (0x1)
-#define LOGGING      (0x2)
+#define GETTING_LINE (0x4)
+#define GETTING_CHAR (0x2)
+#define TIMESTAMPS   (0x1)
 static uint8_t flags = 0;
+static uint8_t lastRX = 0;
+// The number of logging operations active currently. Allows printing of log
+// break characters '<'/'>', '{'/'}', and '['/']' for nested logging events,
+// potentially caused by logs in interrupts.
+static uint8_t logLevel = 0;
+static char logBreakOpeners[] = {'<', '{', '['};
+static char logBreakClosers[] = {'>', '}', ']'};
 
-
-void eUSCIUARTHandler(void) {
-	uint8_t data;
-	if (uartModule->IFG & EUSCI_A_IFG_RXIFG) {
-		data = uartModule->RXBUF;
-		// TODO: implement these shenanigans with PendSV interrupt.
-		if (flags & GETTING_LINE) {
-			static char * line = NULL;
-			static uint32_t charsRead = 0;
-			static uint32_t lineSize = 0;
-			static error err = ERR_NO;
-			charsRead++;
-			if (data == '\r') {             // User is done
-				flags &= ~GETTING_LINE;     // Stop getting line
-				data = '\0';                // Push null terminator
-			}
-			else printCharIS(data);
-			if (charsRead + 1 > lineSize) { // Ran out of room
-				char * newLine = NULL;
-				if (!lineSize) {
-					lineSize = 2;
-					newLine = malloc(lineSize); // The first char and a '\0'
-				}
-				else {
-					lineSize = lineSize * 2;
-					newLine = realloc(line, lineSize); // Try to get more
-				}
-				if (!newLine) {             // Crap...
-					flags &= ~GETTING_LINE;
-					err = ERR_OUT_OF_MEM;
-				}
-				else line = newLine;
-			}
-			if (line && err == ERR_NO) line[charsRead - 1] = data;
-			if (!(flags & GETTING_LINE)) { // Done
-				getLineHandler(line, err);
-				line = NULL;
-				charsRead = 0;
-				lineSize = 0;
-				err = ERR_NO;
-			}
-		}
-		else if (commandHandler) {
-			printCharIS(data);
-			printCharIS('\n');
-			printCharIS('\r');
-			(*commandHandler)(data);
-		}
-	}
-	if (uartModule->IFG & EUSCI_A_IFG_TXIFG) {
-		if (getFromBuff(&uartBuff, &data) == ERR_NO) uartModule->TXBUF = data;
-		else uartModule->IE &= ~EUSCI_A_IE_TXIE;
+static inline void _printCharAS(char letter) {
+	if (uartModule->IFG & EUSCI_A_IFG_TXIFG && buffEmpty(&uartBuff)) uartModule->TXBUF = letter;
+	else {
+		while(addToBuff(&uartBuff, letter) != ERR_NO);
+		uartModule->IE |= EUSCI_A_IE_TXIE;
 	}
 }
 
-inline void printChar(char letter) {
-	while(!(flags & GETTING_LINE) && addToBuff(&uartBuff, letter) != ERR_NO);
-	uartModule->IE |= EUSCI_A_IE_TXIE;
-}
-
-inline void printCharIS(char letter) {
-	while (!(flags & GETTING_LINE) && !(uartModule->IFG & EUSCI_A_IFG_TXIFG));
+static inline void _printCharIS(char letter) {
+	while (!(uartModule->IFG & EUSCI_A_IFG_TXIFG));
 	uartModule->TXBUF = letter;
+}
+
+static inline void _printNewlineIS(void) {
+	_printCharIS('\n');
+	_printCharIS('\r');
 }
 
 error configLogging(EUSCI_A_Type * module, uint32_t baud, uint32_t size) {
@@ -87,7 +48,6 @@ error configLogging(EUSCI_A_Type * module, uint32_t baud, uint32_t size) {
 	uartModule = module;
 	err = initBuff(&uartBuff, size);
 	if (err != ERR_NO) return err;
-	initRTC();
 	return err;
 }
 
@@ -97,6 +57,7 @@ error startLogging(IRQn_Type uartIRQ) {
 	err = startUART(uartModule);
 	uartModule->IE |= EUSCI_A_IE_TXIE;
 	NVIC_EnableIRQ(uartIRQ);
+	initRTC();
 	return err;
 }
 
@@ -108,82 +69,201 @@ error enableCommands(commandFuncPtr callback) {
 	return ERR_NO;
 }
 
+error getChar(getCharPtr callback) {
+	if (!callback) return ERR_NULL_PTR;
+	if (!uartModule) return ERR_UNINITIALIZED;
+	if (flags & (GETTING_CHAR | GETTING_LINE)) return ERR_BUSY;
+	getCharHandler = callback;
+	uartModule->IE |= EUSCI_A_IE_RXIE;
+	flags |= GETTING_CHAR;
+	return ERR_NO;
+}
+
 error getLine(getLinePtr callback) {
 	if (!callback) return ERR_NULL_PTR;
 	if (!uartModule) return ERR_UNINITIALIZED;
+	if (flags & (GETTING_CHAR | GETTING_LINE)) return ERR_BUSY;
 	getLineHandler = callback;
+	uartModule->IE |= EUSCI_A_IE_RXIE;
 	flags |= GETTING_LINE;
 	return ERR_NO;
 }
 
-error printString(char * string) {
+static inline void _printChar(char letter, sendMode mode) {
+	while(flags & GETTING_LINE); // Block while getline is active, don't want garbled I/O
+	switch (mode) {
+	case SEND_ASYNC:
+		_printCharAS(letter);
+		break;
+	case SEND_INTERRUPT_SAFE:
+		_printCharIS(letter);
+		break;
+	}
+}
+
+error printChar(char letter, sendMode mode) {
+	if (!uartModule) return ERR_UNINITIALIZED;
+	_printChar(letter, mode);
+	return ERR_NO;
+}
+
+static inline void _printNewline(sendMode mode) {
+	_printChar('\n', mode);
+	_printChar('\r', mode);
+}
+
+error printNewline(sendMode mode) {
+	if (!uartModule) return ERR_UNINITIALIZED;
+	_printNewline(mode);
+	return ERR_NO;
+}
+
+static inline void _printString(char * string, sendMode mode) {
+	while (*string) _printChar(*(string++), mode);
+}
+
+error printString(char * string, sendMode mode) {
 	if (!string) return ERR_NULL_PTR;
 	if (!uartModule) return ERR_UNINITIALIZED;
-	while (*string) printChar(*(string++));
+	while (*string) printChar(*(string++), mode);
 	return ERR_NO;
 }
 
-error printStringIS(char * string) {
+static inline void _printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t lvl1CharsPrinted, sendMode mode) {
+	uint8_t i = 0, j = lvl1Indent + lvl1CharsPrinted;
+	while (lvl1Indent--) _printChar(' ', mode);
+	for (; string[i] && j < 80; i++, j++) _printChar(string[i], mode);
+	_printNewline(mode);
+	while (string[i]) { // Printed first line
+		for (j = lvlNIndent; j; j--) _printChar(' ', mode);
+		if (string[i] == ' ') i++;
+		for (j = lvlNIndent; j < 80 && string[i]; i++, j++) _printChar(string[i], mode);
+		_printNewline(mode);
+	}
+}
+
+
+error printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t lvl1CharsPrinted, sendMode mode) {
+	if (lvl1Indent > 79 || lvlNIndent > 79) return ERR_PARAM_OUT_OF_BOUNDS;
 	if (!string) return ERR_NULL_PTR;
 	if (!uartModule) return ERR_UNINITIALIZED;
-	while (*string) printCharIS(*(string++));
+	_printWrap(string, lvl1Indent, lvlNIndent, lvl1CharsPrinted, mode);
 	return ERR_NO;
 }
 
-error log(char * string) {
+error log(char * string, sendMode mode) {
 	if (!string) return ERR_NULL_PTR;
 	if (!uartModule) return ERR_UNINITIALIZED;
-	char num[6];
-	uint16_t hours = 0, minutes = 0, seconds = 0;
-	getTime(&hours, &minutes, &seconds);
-	uIntToStr(hours, num, 2);
-	printString(num);
-	printChar(':');
-	uIntToStr(minutes, num, 2);
-	printString(num);
-	printChar(':');
-	uIntToStr(seconds, num, 2);
-	printString(num);
-	printString(" - ");
-	printString(string);
-	printChar('\n');
-	printChar('\r');
+	logLevel++;
+	if (logLevel > 1) { // TODO: Check if in interrupt (actually)
+		_printChar(logBreakOpeners[(logLevel + 1) % 3], SEND_INTERRUPT_SAFE);
+		_printNewline(SEND_INTERRUPT_SAFE);
+		if (mode == SEND_ASYNC) {
+			_printString("Use SEND_INTERRUPT_SAFE in interrupts!", SEND_INTERRUPT_SAFE);
+			_printNewline(SEND_INTERRUPT_SAFE);
+			_printChar(logBreakClosers[(logLevel + 1) % 3], SEND_INTERRUPT_SAFE);
+			logLevel--;
+			return ERR_RACE_COND; // Using this mode would cause a lock up if the buffer fills.
+		}
+	}
+	if (flags & TIMESTAMPS) {
+		char num[6];
+		uIntToStr(getHours(), num, 2);
+		_printString(num, mode);
+		_printChar(':', mode);
+		uIntToStr(getMinutes(), num, 2);
+		_printString(num, mode);
+		_printChar(':', mode);
+		uIntToStr(getSeconds(), num, 2);
+		_printString(num, mode);
+		_printString(" - ", mode);
+	}
+	_printWrap(string, 0, flags & TIMESTAMPS ? 11 : 0, 11, mode);
+	if (logLevel > 1) _printChar(logBreakClosers[(logLevel + 1) % 3], mode);
+	_printNewline(mode);
+	logLevel--;
 	return ERR_NO;
 }
 
-error logIS(char * string) {
-	if (!string) return ERR_NULL_PTR;
-	if (!uartModule) return ERR_UNINITIALIZED;
-	char num[6];
-	uint16_t hours = 0, minutes = 0, seconds = 0;
-	getTime(&hours, &minutes, &seconds);
-	uIntToStr(hours, num, 2);
-	printCharIS('\n');
-	printCharIS('\r');
-	printStringIS(num);
-	printCharIS(':');
-	uIntToStr(minutes, num, 2);
-	printStringIS(num);
-	printCharIS(':');
-	uIntToStr(seconds, num, 2);
-	printStringIS(num);
-	printStringIS(" - ");
-	printStringIS(string);
-	printCharIS('\n');
-	printCharIS('\r');
-	return ERR_NO;
+void enableTimestamps(void) {
+	flags |= TIMESTAMPS;
 }
 
-error printNewline(void) {
-	if (!uartModule) return ERR_UNINITIALIZED;
-	printChar('\n');
-	printChar('\r');
-	return ERR_NO;
+void disableTimestamps(void) {
+	flags &= ~TIMESTAMPS;
 }
 
-error printNewlineIS(void) {
-	if (!uartModule) return ERR_UNINITIALIZED;
-	printCharIS('\n');
-	printCharIS('\r');
-	return ERR_NO;
+static void _stopGettingLine(void) {
+	flags &= ~GETTING_LINE;     // Stop getting line
+	if (!commandHandler) uartModule->IE &= ~EUSCI_A_IE_RXIE; // interrupt enabled by getLine
 }
+
+static void _rxHandler(uint8_t received) {
+	if (flags & GETTING_LINE) {
+		static char * line = NULL;
+		static uint32_t charsRead = 0;
+		static uint32_t lineSize = 0;
+		static error err = ERR_NO;
+		charsRead++;
+		if (received == '\r') {             // User is done
+			_stopGettingLine();
+			received = '\0';                // Push null terminator
+		}
+		else _printCharIS(received);
+		if (charsRead + 1 > lineSize) { // Ran out of room
+			char * newLine = NULL;
+			if (!lineSize) {
+				newLine = malloc(1);    // The first char and a '\0'
+			}
+			else {
+				newLine = realloc(line, lineSize * 2 + 1); // Try to get more
+			}
+			if (!newLine) {             // Crap...
+				if (line) line[lineSize - 1] = '\0';
+				_stopGettingLine();
+				err = ERR_OUT_OF_MEM;
+			}
+			else {
+				line = newLine;
+				lineSize = lineSize * 2 + 1;
+			}
+		}
+		if (line && err == ERR_NO) line[charsRead - 1] = received;
+		if (!(flags & GETTING_LINE)) { // Done
+			getLineHandler(line, err);
+			getLineHandler = NULL;
+			line = NULL;
+			charsRead = 0;
+			lineSize = 0;
+			err = ERR_NO;
+		}
+	}
+	else if (flags & GETTING_CHAR) {
+		getCharHandler(received);
+		getCharHandler = NULL;
+		flags &= ~GETTING_CHAR;     // Stop getting line
+		if (!commandHandler) uartModule->IE &= ~EUSCI_A_IE_RXIE; // interrupt enabled by getChar
+	}
+	else if (commandHandler) {
+		_printCharIS('$');
+		_printCharIS(' ');
+		// Printable
+		if (received >= 0x20 && received <= 0x7D) _printCharIS(received);
+		_printNewlineIS();
+		(*commandHandler)(received);
+	}
+}
+
+void eUSCIUARTHandler(void) {
+	uint8_t data;
+	if (uartModule->IFG & EUSCI_A_IFG_RXIFG) {
+		lastRX = uartModule->RXBUF;
+		// TODO: implement these shenanigans with PendSV interrupt.
+		_rxHandler(lastRX);
+	}
+	if (uartModule->IFG & EUSCI_A_IFG_TXIFG) {
+		if (getFromBuff(&uartBuff, &data) == ERR_NO && !(flags & GETTING_LINE)) uartModule->TXBUF = data;
+		else uartModule->IE &= ~EUSCI_A_IE_TXIE;
+	}
+}
+
