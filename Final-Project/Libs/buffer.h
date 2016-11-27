@@ -11,7 +11,7 @@
 #include "error.h"
 
 #ifndef BUFF_TYPE // Define before including buffer.h to use a custom type
-#define BUFF_TYPE uint32_t   // Defaults to uint32_t
+#define BUFF_TYPE uint8_t   // Defaults to uint32_t
 #endif
 
 /**

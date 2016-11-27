@@ -9,6 +9,14 @@ inline int32_t strLen(char * str) {
 	return len;
 }
 
+inline uint8_t printable(char character) {
+	return character >= ' ' && character <= '~';
+}
+
+inline uint8_t numeric(char character) {
+	return character >= ' ' && character <= '~';
+}
+
 error uIntToStr(uint64_t num, char * string, uint8_t minWidth) {
     uint8_t i = 0;         // If number is zero, one char must still be transmitted: '0'
     uint8_t firstDigit;    // Used to diminish number of modulo operations
@@ -28,6 +36,16 @@ error uIntToStr(uint64_t num, char * string, uint8_t minWidth) {
         num /= 10;                     // Shift numbers down one power of 10
     } while (i);
     return ERR_NO;
+}
+
+error intToStr(int64_t num, char * string, uint8_t minWidth) {
+    if (!string) return ERR_NULL_PTR;
+    if (num < 0) {
+    	num = -num;
+    	string[0] = '-';
+    	string++;
+    }
+    return uIntToStr(num, string, minWidth);
 }
 
 static inline char nibbleToChar(uint8_t nibble) {
@@ -111,5 +129,16 @@ error strToUInt64(char * string, uint64_t * container) {
 		oldNum = num;
 	}
 	*container = num;
+	return ERR_NO;
+}
+
+error strToInt64(char * string, int64_t * container) {
+	if (!string || !container) return ERR_NULL_PTR;
+	int32_t sign = string[0] == '-' ? string++, -1 : 1;
+    uint64_t magnitude = 0;
+    error err = strToUInt64(string, &magnitude);
+    if (magnitude > (sign == -1 ? (uint64_t)INT64_MAX + 1: INT64_MAX)) err = ERR_OVERFLOW;
+    if (err) return err;
+	*container = magnitude * sign;
 	return ERR_NO;
 }

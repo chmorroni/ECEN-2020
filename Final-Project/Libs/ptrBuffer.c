@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "buffer.h"
+#include "ptrBuffer.h"
 #include "msp.h"
 
 /**
@@ -7,7 +7,7 @@
  *        done.
  * @param buff - The address of an initialized buffer.
  */
-inline int8_t buffFull(Buff * buff) {
+inline int8_t ptrBuffFull(PtrBuff * buff) {
 	return buff->numItems >= buff->size;
 }
 
@@ -16,7 +16,7 @@ inline int8_t buffFull(Buff * buff) {
  *        done.
  * @param buff - The address of an initialized buffer.
  */
-inline int8_t buffEmpty(Buff * buff) {
+inline int8_t ptrBuffEmpty(PtrBuff * buff) {
 	return !buff->numItems;
 }
 
@@ -25,7 +25,7 @@ inline int8_t buffEmpty(Buff * buff) {
  *        checking is done.
  * @param buff - The address of an initialized buffer.
  */
-inline int8_t buffInitialized(Buff * buff) {
+inline int8_t ptrBuffInitialized(PtrBuff * buff) {
 	return !!buff->size;
 }
 
@@ -37,9 +37,9 @@ inline int8_t buffInitialized(Buff * buff) {
  *               reinitializing an initialized buffer.
  * @param size - The number of elements to store.
  */
-error initBuff(Buff * buff, uint32_t size) {
+error initPtrBuff(PtrBuff * buff, uint32_t size) {
 	if (!buff) return ERR_NULL_PTR;
-	BUFF_TYPE * mem = (BUFF_TYPE *) malloc(size * sizeof (BUFF_TYPE));
+	PTR_BUFF_TYPE * mem = (PTR_BUFF_TYPE *) malloc(size * sizeof (PTR_BUFF_TYPE));
 	if (!mem) return ERR_OUT_OF_MEM;
 	buff->head = 0;
 	buff->tail = 0;
@@ -54,9 +54,9 @@ error initBuff(Buff * buff, uint32_t size) {
  * @desc  Empties the buffer, does not free memory or change size.
  * @param buff - The address of an initialized buffer.
  */
-error emptyBuff(Buff * buff) {
+error emptyPtrBuff(PtrBuff * buff) {
 	if (!buff) return ERR_NULL_PTR;
-	if (!buffInitialized(buff)) return ERR_UNINITIALIZED;
+	if (!ptrBuffInitialized(buff)) return ERR_UNINITIALIZED;
 	buff->head = buff->tail = buff->numItems = 0; // Reset everything
 	return ERR_NO;
 }
@@ -66,9 +66,9 @@ error emptyBuff(Buff * buff) {
  *        resets the size to 0.
  * @param buff - The address of an initialized buffer.
  */
-error freeBuff(Buff * buff) {
+error freePtrBuff(PtrBuff * buff) {
 	if (!buff) return ERR_NULL_PTR;
-	if (!buffInitialized(buff)) return ERR_UNINITIALIZED;
+	if (!ptrBuffInitialized(buff)) return ERR_UNINITIALIZED;
 	free(buff->mem);
 	buff->mem = NULL;
 	buff->head = buff->tail = buff->numItems = buff->size = 0; // Reset everything
@@ -81,10 +81,10 @@ error freeBuff(Buff * buff) {
  * @param buff - The address of an initialized buffer.
  * @param item - The item to add.
  */
-error addToBuff(Buff * buff, BUFF_TYPE item) {
+error addToPtrBuff(PtrBuff * buff, PTR_BUFF_TYPE item) {
 	if (!buff) return ERR_NULL_PTR;
-	if (!buffInitialized(buff)) return ERR_UNINITIALIZED;
-	if (buffFull(buff)) return ERR_FULL;
+	if (!ptrBuffInitialized(buff)) return ERR_UNINITIALIZED;
+	if (ptrBuffFull(buff)) return ERR_FULL;
 	__disable_interrupts();
 	buff->mem[buff->tail] = item;
 	buff->numItems++;
@@ -99,10 +99,10 @@ error addToBuff(Buff * buff, BUFF_TYPE item) {
  * @param buff - The address of an initialized buffer.
  * @param container - The address of the variable to put the item in.
  */
-error getFromBuff(Buff * buff, BUFF_TYPE * container) {
+error getFromPtrBuff(PtrBuff * buff, PTR_BUFF_TYPE * container) {
 	if (!buff || !container) return ERR_NULL_PTR;
-	if (!buffInitialized(buff)) return ERR_UNINITIALIZED;
-	if (buffEmpty(buff)) return ERR_EMPTY;
+	if (!ptrBuffInitialized(buff)) return ERR_UNINITIALIZED;
+	if (ptrBuffEmpty(buff)) return ERR_EMPTY;
 	__disable_interrupts();
 	*container = buff->mem[buff->head];
 	buff->numItems--;

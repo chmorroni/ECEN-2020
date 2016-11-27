@@ -1,18 +1,30 @@
 #include "async.h"
+#include "ptrBuffer.h"
 
-asyncFuncPtr asyncFunc = NULL;
+static struct {
+	FLAG(initialized);
+} flags = {0};
+PtrBuff funcs;
 
 void initAsync(void) {
-	SCB->SHP[10] = 1;
+	if (flags.initialized) return;
+	NVIC_SetPriority(PendSV_IRQn, NVIC_EncodePriority(7, 7, 7));
+	initPtrBuff(&funcs, 16);
+	flags.initialized = 1;
 }
 
 void runAsync(asyncFuncPtr callback) {
-	asyncFunc = callback;
+	addToPtrBuff(&funcs, callback);
 	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 }
 
 void PendSV_Handler(void) {
-	SCB->ICSR |= SCB_ICSR_PENDSVCLR_Msk;
-	(*asyncFunc)();
-	asyncFunc = NULL;
+	asyncFuncPtr asyncFunc = NULL;
+	if (getFromPtrBuff(&funcs, (void *) &asyncFunc) == ERR_EMPTY) {
+		SCB->ICSR |= SCB_ICSR_PENDSVCLR_Msk;
+	}
+	else {
+		SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
+		(*asyncFunc)();
+	}
 }

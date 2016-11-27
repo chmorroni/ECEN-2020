@@ -9,6 +9,7 @@ typedef uint8_t nrfCmd;
 #define NRF_CONFIG_ADDR         (0x00)                     // Configuration
 #define NRF_EN_AA_ADDR          (0x01)                     // Enable 'Auto Acknowledge'
 #define NRF_EN_RXADDR_ADDR      (0x02)                     // Enabled RX Addresses
+#define NRF_SETUP_RETR_ADDR     (0x04)                     // Enabled RX Addresses
 #define NRF_RF_SETUP_ADDR       (0x06)
 #define NRF_STATUS_ADDR         (0x07)                     // Enabled RX Addresses
 #define NRF_RPD_ADDR            (0x09)
@@ -23,6 +24,8 @@ typedef uint8_t nrfCmd;
 #define NRF_CONFIG_PWR_UP       (0x02)
 #define NRF_CONFIG_PRIM_RX      (0x01)
 #define NRF_CONFIG_PRIM_TX      (0x00)
+#define NRF_SETUP_RETR_ARD_1MS  (0x30)
+#define NRF_SETUP_RETR_ARC_15   (0x0F)
 #define NRF_RF_SETUP_CONT_WAVE  (0x80)
 #define NRF_RF_SETUP_RF_DR_LOW  (0x20)
 #define NRF_RF_SETUP_250KBPS    (0x20)
@@ -30,7 +33,6 @@ typedef uint8_t nrfCmd;
 #define NRF_RF_SETUP_2MBPS      (0x08)
 #define NRF_RF_SETUP_PLL_LOCK   (0x10)
 #define NRF_RF_SETUP_RF_DR_HIGH (0x08)
-#define NRF_RF_SETUP_250KBPS    (0x20)
 #define NRF_RF_SETUP_RF_PWR_18  (0x00)
 #define NRF_RF_SETUP_RF_PWR_12  (0x02)
 #define NRF_RF_SETUP_RF_PWR_6   (0x04)

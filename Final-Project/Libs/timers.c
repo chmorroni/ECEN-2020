@@ -38,7 +38,8 @@ void setCPUFreq(cpuFreq freqDCO) {
 	case FREQ_48:
 		CS->CTL0 = CS_CTL0_DCORSEL_5;
 	}
-	CS->CTL1 = CS_CTL1_SELA_2 | // ACLK source set to REFOCLK
+	CS->CTL1 = CS_CTL1_SELB |   // BCLK set to REFOCLK
+	           CS_CTL1_SELA_2 | // ACLK source set to REFOCLK
 	           CS_CTL1_SELS_3 | // SMCLK set to DCOCLK
 	           CS_CTL1_SELM_3;  // MCLK set to DCOCLK
 	CS->KEY = 0;                // lock CS module for register access

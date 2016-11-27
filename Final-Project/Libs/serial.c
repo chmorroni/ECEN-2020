@@ -103,7 +103,7 @@ error configSPIMaster(EUSCI_A_SPI_Type * module) {
 	                EUSCI_A_CTLW0_SSEL__SMCLK | // Use SMCLK
 	                EUSCI_A_CTLW0_STEM |   // STE used for slave
 	                EUSCI_A_CTLW0_SWRST;   // Stay in reset
-	module->BRW = 0xFF;                   // Divide by enough to safely use 48MHz
+	module->BRW = 0x1F;                    // Divide by enough to safely use 48MHz
 	module->STATW = 0;                     // Defaults
 	return ERR_NO;
 }

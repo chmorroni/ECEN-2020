@@ -6,43 +6,44 @@
 #include "error.h"
 
 typedef void (* commandFuncPtr)(uint8_t received);
-typedef void (* getLinePtr)(char * line, error err);
-typedef void (* getCharPtr)(char received);
-typedef enum {
-	NO_INDENT,
-	INDENT
-} indentation;
-typedef enum {
-	SEND_ASYNC,
-	SEND_INTERRUPT_SAFE
-} sendMode;
+typedef void (* getLineFuncPtr)(char * line, error err);
+typedef void (* getCharFuncPtr)(char received);
+typedef void (* getOptionFuncPtr)(uint32_t option);
+typedef void (* getNumberFuncPtr)(int64_t number);
 
 void eUSCIUARTHandler(void);
 
 /**
- * @desc Enables UART on the specified module and sets up the buffer.
+ * Configures logging on the given module at the requested baud rate. Once pins
+ * are mapped, use the start logging function to allow logging.
  */
-error configLogging(EUSCI_A_Type * module, uint32_t baud, uint32_t size);
-
+error configLogging(EUSCI_A_Type * module, uint32_t baud);
 error startLogging(IRQn_Type uartIRQ);
-
+/**
+ * Enables one character commands, takes a callback to run when a command is
+ * received
+ */
 error enableCommands(commandFuncPtr callback);
-
-error getChar(getCharPtr callback);
-
-error getLine(getLinePtr callback);
-
-error printChar(char letter, sendMode mode);
-
-error printNewline(sendMode mode);
-
-error printString(char * string, sendMode mode);
-
-error printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t lvl1CharsPrinted, sendMode mode);
-
-error log(char * string, sendMode mode);
-
-void enableTimestamps(void);
-void disableTimestamps(void);
+/**
+ * Calls callback asynchronously when a character is received
+ */
+error getChar(getCharFuncPtr callback);
+/**
+ * Calls callback asynchronously when a line is received
+ */
+error getLine(getLineFuncPtr callback);
+error getNumberInRange(getNumberFuncPtr callback, int64_t min, int64_t max);
+/**
+ * Calls callback asynchronously when a line is received
+ */
+error getOption(getOptionFuncPtr callback, uint32_t optionsLen, char ** optionsArr);
+error printChar(char letter);
+error printNewline(void);
+error printString(char * string);
+error printArray(uint32_t len, char ** strArr);
+error printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t lvl1CharsPrinted);
+error log(char * string);
+error readyForCommands(void);
+error pauseCommands(void);
 
 #endif
