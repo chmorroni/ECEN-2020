@@ -164,3 +164,16 @@ void pwm(float dutyCycle, ccrN reg) {
 		TIMER_A0->CCR[reg] = (uint16_t) (TIMER_A0->CCR[0] * dutyCycle);
 	}
 }
+void pwmI(float dutyCycle, ccrN reg) {
+	if (dutyCycle <= 0 || dutyCycle > 1) {     // Out of bounds / off -> default to off
+		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0 | // Output bit
+		                      TIMER_A_CCTLN_OUT;       // Set OUTN signal high
+	}
+	else if (dutyCycle == 1) {
+		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0;  // Output bit, default 0
+	}
+	else {
+		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_3;  // Reset / Set
+		TIMER_A0->CCR[reg] = (uint16_t) (TIMER_A0->CCR[0] * dutyCycle);
+	}
+}

@@ -83,5 +83,6 @@ error initTimerA(Timer_A_Type * timer, float freq);
  *              you want to use with port mapping
  */
 void pwm(float dutyCycle, ccrN reg);
+void pwmI(float dutyCycle, ccrN reg); // Inverted (active low)
 
 #endif
