@@ -15,7 +15,7 @@ static struct {
 } callbacks = {0};
 static struct {
 	FLAG(unhandledCommand); // Command received in the middle of a log
-	FLAG(readyForCommand);
+	FLAG(readyForCommand);  // command function pointer registered, not getting
 } flags;
 static enum { // Current get operation
 	GETTING_NO,
@@ -29,23 +29,15 @@ uint32_t currentOption = 0;
 int64_t maxNum = 0;
 int64_t minNum = 0;
 static uint8_t lastRX = 0; // last received char
-static char logBreakOpeners[] = {'<', '{', '['}; // Opening chars to iterate through for nested logs.
-static char logBreakClosers[] = {'>', '}', ']'}; // Closing ^...
+static char logBreakOpeners[] = {'<', '{', '['};
+static char logBreakClosers[] = {'>', '}', ']'};
 
 /* Prototypes of internal functions */
-/**
- * Prints a character as soon as the buffer is empty. Does not wait for getting
- * operations to complete.
- */
 static inline void _printCharNB(char letter);
 static inline void _printChar(char letter);
 static inline void _printNewlineNB(void);
 static inline void _printNewline(void);
 static inline void _printString(char * string);
-
-/**
- * Prints a string and wraps at 80 chars.
- */
 static inline void _printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t lvl1CharsPrinted);
 static void _stopGettingLine(void);
 static void inline _print80NB(char * string, uint8_t charsPrinted);
@@ -65,6 +57,9 @@ error configLogging(EUSCI_A_Type * module, uint32_t baud) {
 	return err;
 }
 
+/**
+ * Actually enables the proper interrupts once port mapping is complete.
+ */
 error startLogging(IRQn_Type uartIRQ) {
 	if (!uartModule) return ERR_UNINITIALIZED;
 	error err = ERR_NO;
@@ -115,7 +110,9 @@ error getLine(getLineFuncPtr callback) {
 }
 
 /**
- * Calls callback asynchronously when a line is received
+ * Takes an array of options. Prints them out and allows the user to select one
+ * by going through the list and clicking enter on the selected one. Calls
+ * callback asynchronously on the option.
  */
 error getOption(getOptionFuncPtr callback, uint32_t optionsLen, char ** optionsArr) {
 	if (!callback) return ERR_NULL_PTR;
@@ -137,6 +134,10 @@ error getOption(getOptionFuncPtr callback, uint32_t optionsLen, char ** optionsA
 	return ERR_NO;
 }
 
+/**
+ * Given to getLine to get a number. Performs error checking to ensure it is a
+ * number and is within the limits requested.
+ */
 void _getLineNumberHandler(char * line, error err) {
 	int64_t number = 0;
 	if (err) { // Catches line = NULL
@@ -159,6 +160,9 @@ void _getLineNumberHandler(char * line, error err) {
 	else getLine(&_getLineNumberHandler);
 }
 
+/**
+ * Prompts for a number to be entered at the console.
+ */
 error getNumberInRange(getNumberFuncPtr callback, int64_t min, int64_t max) {
 	if (!callback) return ERR_NULL_PTR;
 	if (!uartModule) return ERR_UNINITIALIZED;
@@ -179,6 +183,9 @@ static inline void _printCharNB(char letter) {
 	uartModule->TXBUF = letter;
 }
 
+/**
+ * Prints a char. Blocking if getting.
+ */
 static inline void _printChar(char letter) {
 	while (!(uartModule->IFG & EUSCI_A_IFG_TXIFG) || getting); // Block until done with any get operations.
 	uartModule->TXBUF = letter;
@@ -190,6 +197,9 @@ error printChar(char letter) {
 	return ERR_NO;
 }
 
+/**
+ * Prints a newline without blocking on getting operation
+ */
 static inline void _printNewlineNB(void) {
 	_printCharNB('\n');
 	_printCharNB('\r');
@@ -232,6 +242,9 @@ error printArray(uint32_t len, char ** strArr) {
 
 /**
  * Prints a string and wraps at 80 chars.
+ * lvl1Indent - Spaces to put before the first line
+ * lvlNIndent - Spaces to put before every line except the first
+ * lvl1CharsPrinted - The chars printed since the last newline
  */
 static inline void _printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t lvl1CharsPrinted) {
 	uint8_t i = 0, j = lvl1Indent + lvl1CharsPrinted;
@@ -256,7 +269,12 @@ static inline void _printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNInd
 	}
 }
 
-
+/**
+ * Prints a string and wraps at 80 chars.
+ * lvl1Indent - Spaces to put before the first line
+ * lvlNIndent - Spaces to put before every line except the first
+ * lvl1CharsPrinted - The chars printed since the last newline
+ */
 error printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t lvl1CharsPrinted) {
 	if (lvl1Indent > 79 || lvlNIndent > 79) return ERR_PARAM_OUT_OF_BOUNDS;
 	if (!string) return ERR_NULL_PTR;
@@ -272,12 +290,15 @@ error log(char * string) {
 	static uint8_t logLevel = 0;
 	if (!string) return ERR_NULL_PTR;
 	if (!uartModule) return ERR_UNINITIALIZED;
+	// Don't want to split the log into multiple sections if button is pressed
+	//   during logging
 	pauseCommands();
 	logLevel++;
 	if (logLevel > 1) {
 		_printChar(logBreakOpeners[(logLevel + 1) % 3]);
 		_printNewline();
 	}
+	// Print the time-stamp
 	char num[6];
 	uIntToStr(getHours(), num, 2);
 	_printString(num);
@@ -288,6 +309,7 @@ error log(char * string) {
 	uIntToStr(getSeconds(), num, 2);
 	_printString(num);
 	_printString(" - ");
+	// Print the log
 	_printWrap(string, 0, 11, 11);
 	if (logLevel > 1) _printChar(logBreakClosers[(logLevel + 1) % 3]);
 	else readyForCommands(); // Only ready if exiting last logging level
@@ -295,11 +317,9 @@ error log(char * string) {
 	return ERR_NO;
 }
 
-static void _stopGettingLine(void) {
-	getting = GETTING_NO;     // Stop getting line
-	if (!callbacks.command) uartModule->IE &= ~EUSCI_A_IE_RXIE; // interrupt enabled by getLine
-}
-
+/**
+ * Used by rxHandler to reprint the current line, truncating string at 80 chars.
+ */
 static void inline _print80NB(char * string, uint8_t charsPrinted) {
 	while (*string && charsPrinted < 80) {
 		_printCharNB(*(string++));
@@ -321,6 +341,8 @@ static void _rxHandler() {
 
 	case GETTING_NO:
 		if (callbacks.command) {
+			// Printing was in progress, but a command came in the middle of it.
+			//   Don't want to miss the command.
 			if (!flags.readyForCommand) flags.unhandledCommand = 1;
 			else {
 				flags.unhandledCommand = 0;
@@ -334,23 +356,21 @@ static void _rxHandler() {
 
 	case GETTING_LINE:
 		charsRead++;
-		if (lastRX == '\r') {             // User is done
-			_stopGettingLine();
-			lastRX = '\0';                // Push null terminator
+		if (lastRX == '\r') { // User is done
+			getting = GETTING_NO;     // Stop getting line
+			lastRX = '\0'; // Push null terminator
 			_printNewlineNB();
 		}
-		else _printCharNB(lastRX);
+		else _printCharNB(lastRX); // Otherwise print it back
 		if (charsRead + 1 > lineSize) { // Ran out of room
 			char * newLine = NULL;
-			if (!lineSize) {
-				newLine = malloc(1);    // The first char and a '\0'
-			}
+			if (!lineSize) newLine = malloc(1); // Space for the first char
 			else {
 				newLine = realloc(line, lineSize * 2 + 1); // Try to get more
 			}
-			if (!newLine) {             // Crap...
-				if (line) line[lineSize - 1] = '\0';
-				_stopGettingLine();
+			if (!newLine) { // Crap, couldn't allocate ...
+				if (line) line[lineSize - 1] = '\0'; // Terminate it.
+				getting = GETTING_NO;     // Stop getting line
 				err = ERR_OUT_OF_MEM;
 			}
 			else {
@@ -365,13 +385,13 @@ static void _rxHandler() {
 			charsRead = 0;
 			lineSize = 0;
 			err = ERR_NO;
+			if (!callbacks.command) uartModule->IE &= ~EUSCI_A_IE_RXIE; // interrupt enabled by getLine
 		}
 		break;
 
 	case GETTING_CHAR:
 		getting = GETTING_NO;     // Stop getting char
 		(*callbacks.getChar)(lastRX);
-		if (!callbacks.command) uartModule->IE &= ~EUSCI_A_IE_RXIE; // interrupt enabled by getChar
 		break;
 
 	case GETTING_OPTION:
@@ -424,7 +444,7 @@ error pauseCommands(void) {
 
 void eUSCIUARTHandler(void) {
 	if (uartModule->IFG & EUSCI_A_IFG_RXIFG) {
-		lastRX = uartModule->RXBUF; // Clears IFG
+		lastRX = uartModule->RXBUF; // Clears IFG and saves the RX
 		runAsync(&_rxHandler);
 	}
 }

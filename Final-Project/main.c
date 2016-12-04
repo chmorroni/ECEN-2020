@@ -1,22 +1,44 @@
-#include <stdint.h>
-#include <stdarg.h>
-#include "msp.h"
-#include "core_cm4.h"
-#include "Libs/nrf.h"
-#include "Libs/async.h"
-#include "Libs/buffer.h"
-#include "Libs/serial.h"
-#include "Libs/error.h"
-#include "Libs/helpers.h"
-#include "Libs/timers.h"
-#include "Libs/logging.h"
-#include "Libs/portMapping.h"
+#include <stdint.h>           // Specific int widths
+#include "msp.h"              // Register macros and pointers
+#include "core_cm4.h"         // Used to enable and disable interrupts
+#include "Libs/nrf.h"         // Defines register addresses and encodings
+#include "Libs/async.h"       // Used to run things before main but interruptible
+#include "Libs/buffer.h"      // FIFOs
+#include "Libs/serial.h"      // Used to setup SPI
+#include "Libs/error.h"       // Error enum and descriptions
+#include "Libs/helpers.h"     // String functions and extra macros
+#include "Libs/timers.h"      // Setup PWM and interrupts
+#include "Libs/logging.h"     // UART communications
+#include "Libs/portMapping.h" // Easy mapping of ports
 
-#define TRANSMITTER
+#undef TRANSMITTER // Define to load transmitter code, undef to load car code
 
 /**
- * Global macros
+ * Communication scheme:
+ *
+ * 1 packet of 8 bit width is used for all communications, no multi-packet
+ * transmissions are needed. The transmitter needs to send the direction, speed,
+ * and specific commands. Direction and speed are sent in one packet,
+ * representing the STATE requested by the user. Speed is a 6 bit wide bit field
+ * that represents a 2's complement, signed number, from -32 to 31. Direction is
+ * a two bit wide field that represents the value of the direction enum.
+ * Commands are sent by setting both direction bits to 11, since this is an
+ * impossible direction. The bits represent the value of the command enum. Since
+ * the field is 6 bits wide, we get up to 64 commands.
+ *
+ * Packet encoding:
+ *
+ *            7 6 5 4 3 2 1 0
+ * State:     S S S S S S D D (S = State, D = Direction)
+ *   Strait:              0 0
+ *   Left:                1 0
+ *   Right:               0 1
+ *
+ *            7 6 5 4 3 2 1 0
+ * Command:   C C C C C C 1 1 (C = Command)
  */
+
+// These all refer to the 8 bit packet encoding
 #define DIR_OFS      (0)
 #define SPEED_OFS    (2)
 #define CMD_OFS      SPEED_OFS
@@ -24,13 +46,11 @@
 #define SPEED_MASK   (0xFC)
 #define CMD_MASK     SPEED_MASK
 #define CMD_ENCODING (0x03)
+
 #define MOSI_SIZE    (4)
 #define MISO_SIZE    (4)
 #define PI           (3.1416)
 
-/**
- * Global types
- */
 typedef enum {
 	CMD_NOP,           // No op. Could be used to test for connection.
 
@@ -49,52 +69,52 @@ typedef enum {
 	CMD_MODE_SAFE_DS,  // Disable sensors
 } command;
 
+char * commandDescriptions[] = {
+	"No-op",
+
+	"Enable lights",
+	"Disable lights",
+	"Blink lights",
+
+	"Enable movement",
+	"Disable movement",
+
+	"Enable breaking on 0 speed",
+	"Disable breaking on 0 speed",
+	"Enable speed governor",
+	"Disable speed governor",
+	"Enable safe mode",
+	"Disable safe mode"
+};
+
 typedef enum {
 	DIR_STRAIT,
 	DIR_RIGHT,
 	DIR_LEFT
 } direction;
 
+char * directionDescriptions[] = {
+	"Strait",
+	"Right",
+	"Left"
+};
+
 typedef struct {
 	REG(speed, 6); // 6 bits wide, -32 to 31
 	direction dir;
 } state;
 
-/**
- * Global variables
- */
-char * commandDescriptions[] = {
-		"No-op",
-
-		"Enable lights",
-		"Disable lights",
-		"Blink lights",
-
-		"Enable movement",
-		"Disable movement",
-
-		"Enable breaking on 0 speed",
-		"Disable breaking on 0 speed",
-		"Enable speed governor",
-		"Disable speed governor",
-		"Enable safe mode",
-		"Disable safe mode"
-};
-char * directionDescriptions[] = {
-		"Strait",
-		"Right",
-		"Left"
-};
 // Sine lookup table (0 to PI / 2)
 static float sines[] = {0.0000, 0.0628, 0.1253, 0.1874, 0.2487, 0.3090, 0.3681,
                         0.4258, 0.4818, 0.5358, 0.5878, 0.6374, 0.6845, 0.7290,
                         0.7705, 0.8090, 0.8443, 0.8763, 0.9048, 0.9298, 0.9511,
                         0.9686, 0.9823, 0.9921, 0.9980, 1.0000};
 
-
+// Anonymous struct with union allows struct.reg to be set to the hex byte and
+// have access to fields without conversions or error prone decoding.
 static union {
 	uint8_t reg;
-	struct { // Anonymous struct for accessing bit fields in the status register.
+	struct { // Anonymous struct for accessing bit fields in the status register
 		FLAG(txFull);
 		UREG(rxPipeNum, 3);
 		FLAG(maxRT);
@@ -107,15 +127,11 @@ static Buff mosi = {0};
 static Buff miso = {0};
 
 /**
- * Global function prototypes
- */
-
-/**
  * Helper functions
  */
 inline float sin(uint8_t theta);
-uint8_t encodeState(state stateToEncode);
-uint8_t encodeCommand(command commandToEncode);
+inline uint8_t encodeState(state stateToEncode);
+inline uint8_t encodeCommand(command commandToEncode);
 inline state decodeState(uint8_t packet);
 inline command decodeCommand(uint8_t packet);
 inline uint8_t isCommand(uint8_t packet);
@@ -159,20 +175,14 @@ inline void nrfClearStatus(void);
 #define JOY_LEFT_THRESH  -10
 #define JOY_RIGHT_THRESH 10
 
-/**
- *  Type definitions
- */
 typedef enum {
 	MODE_SETUP,              // Changing settings
 	MODE_NORMAL,             // Controlling car
 	MODE_RANGE_TEST,         // Expecting packet loss, displaying with LED
 	MODE_CONNECTION_DROPPED, // Lost connection unexpectedly
-	MODE_DISABLED            // Changing settings
+	MODE_DISABLED            // Want to prevent all transmission
 } opMode;
 
-/**
- *  Global vars
- */
 static struct {
 	FLAG(statusRead);
 	FLAG(packetDropped);
@@ -200,6 +210,7 @@ static opMode mode = MODE_NORMAL;
 /**
  * Callback functions
  */
+// TODO: Update this
 void endRangeTestConfirm(char received);
 void commandHandler(uint8_t received);
 
@@ -225,35 +236,60 @@ void transmit(void);
 void updateLED(opMode ledMode);
 
 
-void main(void) { // Responsible for setup and user IO.
-	char str[21]; // Enough for 2^64 + '\0' as well as 0xFFFFFF... + '\0'
+void main(void) {   // Responsible for setup and user IO.
+	char str[21];   // Enough for 2^64 + '\0' as well as 0xFFFFFF... + '\0'
 	WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD; // Stop watchdog timer
 	setCPUFreq(FREQ_24);
-	initAsync();
 	setupLogging();
-	printNewline();
+	initAsync(); // Used to transmit packets
+	log("Setting up nrf");
 	setupTimers();
 	setupInputs();
-	log("Setting up nrf");
 	setupNRF();
 	setupLED();
 	log("Setup complete");
+	printNewline(); // Clear unfinished line
+	printNewline();
+	printNewline();
+	printNewline();
+	printNewline();
 
 	__enable_interrupts();
 
-	while(1) {
+	/**
+	 * General format of constantly running code, only pertains to non-interrupt
+	 * driven codes (not real time dependent) also excludes transmission of
+	 * packets. This section is mostly for logging and other non-important tasks
+	 *
+	 * while (1) {
+	 *     code to run on all mode changes
+	 *     switch (mode) {
+	 *         case mode 1:
+	 *             initialization code, run when mode changes to mode 1
+	 *             while in mode 1 {
+	 *                 stuff to run constantly for mode 1
+	 *             }
+	 *             clean up, run when mode changes away from mode 1
+	 *         case mode 2:
+	 *         ...
+	 *     }
+	 * }
+	 *
+	 */
+	while (1) {
 		updateLED(mode);
 		switch (mode) {
+
 		case MODE_SETUP:
 			pauseStatusReports();
 			while (mode == MODE_SETUP) {
 				// TODO ...
 			}
 			break;
+
 		case MODE_NORMAL:
 			resumeStatusReports();
 			while (mode == MODE_NORMAL) {
-
 				if (flags.log) {
 					log("Status Report:");
 					pauseCommands();
@@ -291,30 +327,33 @@ void main(void) { // Responsible for setup and user IO.
 					flags.log = 0;
 					readyForCommands();
 				}
-
 			}
 			break;
+
 		case MODE_RANGE_TEST:
 			pauseStatusReports();
 			while (mode == MODE_RANGE_TEST) {
 				updateLED(mode);
 			}
 			break;
+
 		case MODE_CONNECTION_DROPPED:
 			pauseStatusReports();
 			log("ERROR: Packet dropped.");
 			log("Looking for receiver...");
 			while (mode == MODE_CONNECTION_DROPPED); // Handled by transmit function
+			// Receiver not necessarily found, Could be disabling, range testing, etc.
 			if (!flags.packetDropped) log("Receiver found. Resuming normal operation");
 			break;
+
 		case MODE_DISABLED:
 			pauseStatusReports();
 			TIMER_A2->CTL &= ~TIMER_A_CTL_IE; // Stop transmit interrupt
-			nrfDsCE(); // Disable transmitter
+			nrfDsCE();                        // Disable transmitter
 			log("Transmitter disabled. You will not be able to do anything before re-enabling with the 'e' command.");
-			while (mode == MODE_DISABLED); // Do nothing
-			nrfEnCE(); // Enable transmitter
-			TIMER_A2->CTL |= TIMER_A_CTL_IE; // Start transmit interrupt
+			while (mode == MODE_DISABLED);    // Do nothing
+			nrfEnCE();                        // Enable transmitter
+			TIMER_A2->CTL |= TIMER_A_CTL_IE;  // Start transmit interrupt
 			log("Transmitter operation restored.");
 			break;
 		}
@@ -485,22 +524,22 @@ void setupInputs(void) {
 	NVIC_EnableIRQ(PORT1_IRQn); // Register port 1 interrupts with NVIC
 
 	// Left booster pack button
-	P3->DIR &= ~BIT5;  // Buttons S1/S2 set to input
-	P3->REN |= BIT5;     // Enable pullup/down resistors
-	P3->OUT |= BIT5;     // Set to pullup mode
-	P3->IFG = 0;                // Clear the interrupt Flag
-	P3->IES |= BIT5;     // Interrupt fires on high to low transition
-	P3->IE |= BIT5;      // Enable interrupt for buttons
-	NVIC_EnableIRQ(PORT3_IRQn); // Register port 1 interrupts with NVIC
+	P3->DIR &= ~BIT5;
+	P3->REN |= BIT5;
+	P3->OUT |= BIT5;
+	P3->IFG = 0;
+	P3->IES |= BIT5;
+	P3->IE |= BIT5;
+	NVIC_EnableIRQ(PORT3_IRQn);
 
 	// Right booster pack button
-	P5->DIR &= ~BIT1;  // Buttons S1/S2 set to input
-	P5->REN |= BIT1;     // Enable pullup/down resistors
-	P5->OUT |= BIT1;     // Set to pullup mode
-	P5->IFG = 0;                // Clear the interrupt Flag
-	P5->IES |= BIT1;     // Interrupt fires on high to low transition
-	P5->IE |= BIT1;      // Enable interrupt for buttons
-	NVIC_EnableIRQ(PORT5_IRQn); // Register port 1 interrupts with NVIC
+	P5->DIR &= ~BIT1;
+	P5->REN |= BIT1;
+	P5->OUT |= BIT1;
+	P5->IFG = 0;
+	P5->IES |= BIT1;
+	P5->IE |= BIT1;
+	NVIC_EnableIRQ(PORT5_IRQn);
 
 	// Turn off LCD
 	P2->OUT &= ~BIT6;
@@ -508,14 +547,14 @@ void setupInputs(void) {
 
 	// Joystick inputs
 	// Setup reference generator
-	P4->DIR &= ~BIT4;                          // X
-	P4->SEL0 |= BIT4;                          // Select A9 mode
-	P4->SEL1 |= BIT4;
-	P6->DIR &= ~BIT0;                          // Y
-	P6->SEL0 |= BIT0;                          // Select A15 mode
-	P6->SEL1 |= BIT0;
-	ADC14->CTL0 &= ~ADC14_CTL0_ENC;            // Allow changes
-	ADC14->CTL0 = ADC14_CTL0_PDIV__1 | // predivider = 1
+	P4->DIR &= ~BIT4;                      // X
+	P4->SEL0 |= BIT4;                      // Select A9 mode
+	P4->SEL1 |= BIT4;                      // Select A9 mode
+	P6->DIR &= ~BIT0;                      // Y
+	P6->SEL0 |= BIT0;                      // Select A15 mode
+	P6->SEL1 |= BIT0;                      // Select A15 mode
+	ADC14->CTL0 &= ~ADC14_CTL0_ENC;        // Allow changes
+	ADC14->CTL0 = ADC14_CTL0_PDIV__1 |     // predivider = 1
 	              ADC14_CTL0_SHS_0 |       // Sample and hold select pulled from SC bit
 	              ADC14_CTL0_SHP |         // Pulse mode
 	              ADC14_CTL0_DIV__1 |      // divider = 1
@@ -523,20 +562,24 @@ void setupInputs(void) {
 	              ADC14_CTL0_CONSEQ_3 |    // Repeat sequence of channels
 	              ADC14_CTL0_SHT0__96 |    // 96 clocks per sample
 	              ADC14_CTL0_SHT1__96 |    // 96 clocks per sample
-	              ADC14_CTL0_MSC |         // Conversions do not require SHI after first one
+	              ADC14_CTL0_MSC |         // Conversions do not require sample
+				                           //   hold after first one
 	              ADC14_CTL0_ON;           // On
 
 	ADC14->CTL1 = ADC14_CTL1_RES__8BIT |   // 8 bit resolution (For 5 bit width speed)
-	              ADC14_CTL1_DF;
-	ADC14->LO0 = 0x80;
-	ADC14->HI0 = 0x7F;
+	              ADC14_CTL1_DF;           // Read as a signed number
+	// LO0 (low) and HI0 (high) limits are read from lower 8 bits in signed
+	// (2's complement) representation due to using an 8 bit resolution and
+	// setting DF (Data Format).
+	ADC14->LO0 = 0x80;                     // Max signed negative
+	ADC14->HI0 = 0x7F;                     // Max signed positive
 
 	ADC14->MCTL[0] = ADC14_MCTLN_INCH_15;  // Map joyPos.x to MEM[0]
 	ADC14->MCTL[1] = ADC14_MCTLN_INCH_9 |  // Map joyPos.y to MEM[1]
-			         ADC14_MCTLN_EOS;          // Stop ADC from checking chanels once it reaches MEM[2]
-	ADC14->IER0 = 0; // Don't want interrupts
-	ADC14->CTL0 |= ADC14_CTL0_ENC;             // Enable Conversions
-	ADC14->CTL0 |= ADC14_CTL0_SC;        // Sampling and conversion start
+			         ADC14_MCTLN_EOS;      // Last channel to check
+	ADC14->IER0 = 0;                       // Don't need interrupts
+	ADC14->CTL0 |= ADC14_CTL0_ENC;         // Enable Conversions
+	ADC14->CTL0 |= ADC14_CTL0_SC;          // Sampling and conversion start
 }
 
 void setupNRF(void) {
@@ -559,21 +602,21 @@ void setupNRF(void) {
 	// IRQ
 	P6->DIR &= ~BIT3;
 	P6->IFG = 0;
-	P6->IES |= BIT3;            // Interrupt fires on high to low transition
+	P6->IES |= BIT3; // Interrupt fires on high to low transition
 	P6->IE |= BIT3;
 	NVIC_EnableIRQ(PORT5_IRQn);
 
 	nrfClearStatus();
-	nrfWReg(NRF_CONFIG_ADDR, NRF_CONFIG_RX_DR_IIE |
-	                         NRF_CONFIG_EN_CRC |
+	nrfWReg(NRF_CONFIG_ADDR, NRF_CONFIG_RX_DR_IIE | // Disable RX interrupt
+	                         NRF_CONFIG_EN_CRC |    // Cyclic Redundancy Check
 	                         NRF_CONFIG_PWR_UP |
-	                         NRF_CONFIG_PRIM_TX);
+	                         NRF_CONFIG_PRIM_TX);   // Setup as transmitter
 
-	nrfWReg(NRF_SETUP_RETR_ADDR, NRF_SETUP_RETR_ARD_1MS |
-	                             NRF_SETUP_RETR_ARC_15);
+	nrfWReg(NRF_SETUP_RETR_ADDR, NRF_SETUP_RETR_ARD_1MS | // 1Ms auto retransmit delay
+	                             NRF_SETUP_RETR_ARC_15);  // Allow up to 15 retransmits
 
 	nrfWReg(NRF_RF_SETUP_ADDR, NRF_RF_SETUP_250KBPS |
-	                           NRF_RF_SETUP_RF_PWR_0);
+	                           NRF_RF_SETUP_RF_PWR_0);    // 0dB power (Max)
 }
 
 void setupLED(void) {
@@ -598,12 +641,26 @@ void setupLED(void) {
  * Helper functions
  */
 
+/**
+ * Change the mode of operation only if the pace where it is called is still in
+ * the mode it wants to switch from. For example, if we are in connection dropped
+ * mode and want to switch to range test mode, but a packet comes in just after
+ * range test mode has been selected, then connection dropped mode will switch
+ * to normal mode and we will never get to range test mode.
+ */
 inline void requestMode(opMode from, opMode to) {
-	__disable_interrupts(); // Makes sure a forced change sticks in an ISR, as requested mode is either rejected here or takes effect immediately after this function.
+	__disable_interrupts(); // Makes sure a forced change sticks in an ISR, as
+	                        //   requested mode is either rejected here or takes
+	                        //   effect immediately after this function.
 	if (mode == from) mode = to;
 	__enable_interrupts();
 }
 
+/**
+ * Don't care about mode changes that could have happened between the last time
+ * we checked the mode and now, when we want to change the mode. Switch needs
+ * to happen.
+ */
 inline void forceMode(opMode newMode) {
 	mode = newMode;
 }
@@ -635,16 +692,24 @@ void printInvalidCommand(uint8_t received) {
 	printHelp();
 }
 
+/**
+ * Stop 1Hz logging.
+ */
 inline void pauseStatusReports(void) {
 	TIMER_A1->CTL &= ~TIMER_A_CTL_IE;
 }
 
+/**
+ * Enable 1Hz logging.
+ */
 inline void resumeStatusReports(void) {
 	TIMER_A1->CTL |= TIMER_A_CTL_IE;
 }
 
 void updateLED(opMode ledMode) {
 
+	// Used for 60Hz update of led state (pulse effect, constatnly needs to be
+	//   updated, etc.
 	if (ledMode == MODE_SETUP ||
 	    ledMode == MODE_CONNECTION_DROPPED ||
 	    ledMode == MODE_DISABLED) {
@@ -676,6 +741,10 @@ void updateLED(opMode ledMode) {
 	}
 }
 
+/**
+ * Read sensors and update the state based on preferences, what is determining
+ * input, etc.
+ */
 void updateState(void) {
 	int8_t x = ADC14->MEM[0] >> 8; // 8 for register offset...
 	int8_t y = ADC14->MEM[1] >> 8;
@@ -695,7 +764,9 @@ void updateState(void) {
 }
 
 void transmit(void) {
-	if (nrfStatus.txDS || nrfStatus.txFull || nrfStatus.maxRT) { // Cannot send until TX data sent flag is cleared and the buffer is not empty
+	// Cannot send until TX data sent flag is cleared and the nrf's buffer is
+	//   empty, otherwise packet is lost.
+	if (nrfStatus.txDS || nrfStatus.txFull || nrfStatus.maxRT) {
 		nrfClearStatus();
 		nrfUpdateStatus();
 		nrfWaitForSPI();
@@ -709,7 +780,8 @@ void transmit(void) {
 		}
 		else {
 			updateState();
-			// Input from controller trumps state from command line
+			// Input from controller trumps state from command line, safer in
+			//   case a lot of packets were requested by accident.
 			if (nextState.dir != DIR_STRAIT || nextState.speed != 0) packetsToSend = 0;
 			if (packetsToSend) {
 				nrfTXState(cliState);
@@ -718,9 +790,11 @@ void transmit(void) {
 			else nrfTXState(nextState);
 		}
 		packetsSent++;
+		// Reset nextState
 		nextState.dir = DIR_STRAIT;
 		nextState.speed = 0;
 
+		// Check happens in transmit since main might be blocked
 		if (flags.packetDropped) {
 			droppedPackets++;
 			requestMode(MODE_NORMAL, MODE_CONNECTION_DROPPED);
@@ -728,7 +802,7 @@ void transmit(void) {
 		break;
 	case MODE_CONNECTION_DROPPED:
 		if (!flags.packetDropped) requestMode(MODE_CONNECTION_DROPPED, MODE_NORMAL);
-		// Fallthrough
+		// Fall through
 	case MODE_RANGE_TEST:
 		nrfTXCommand(CMD_NOP);
 		break;
@@ -753,10 +827,10 @@ void TA3_N_IRQHandler(void) {
 	TIMER_A3->CTL &= ~TIMER_A_CTL_IFG;
 	static uint8_t tics = 0;
 	switch (mode) {
-	case MODE_SETUP:
+	case MODE_SETUP: // Slow sine wave on LED
 		// Make pwm a sine wave
 		break;
-	case MODE_CONNECTION_DROPPED:
+	case MODE_CONNECTION_DROPPED: // Quick flash of LED
 		if (tics == 5) pwm(prefs.brightness, CCR1);
 		else if (tics == 10) {
 			tics = 0;
@@ -777,48 +851,48 @@ void TA3_N_IRQHandler(void) {
 
 void EUSCIA1_IRQHandler(void) {
 	uint8_t byte;
-	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_RXIFG) {
-		byte = EUSCI_A1_SPI->RXBUF;
+	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_RXIFG) { // Packet received from NRF
 		if (!flags.statusRead) {
-			nrfStatus.reg = byte;
+			nrfStatus.reg = EUSCI_A1_SPI->RXBUF; // Save the status
+			// nrfStatus is a union, so these are instantly updated
 			if (nrfStatus.txDS) flags.packetDropped = 0;
 			if (nrfStatus.maxRT) flags.packetDropped = 1;
 			flags.statusRead = 1;
 		}
-		addToBuff(&miso, byte);
 	}
 	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_TXIFG && EUSCI_A1_SPI->IE & EUSCI_A_IE_TXIE) {
-
+		// Put next byte into TXBUF, if no next byte we're done, stop interrupts
 		if (getFromBuff(&mosi, &byte) == ERR_NO) EUSCI_A1_SPI->TXBUF = byte;
 		else EUSCI_A1_SPI->IE &= ~EUSCI_A_IE_TXIE;
 	}
 }
 
+// TODO: This whole thing is only for debugging
 void PORT1_IRQHandler (void) {
-	if (P1->IFG & BIT1) {
+	if (P1->IFG & BIT1) { // Toggle range test
+		// TODO: NO DAMN LOGGING IN INTERRUPTS!!!
 		pauseCommands();
 		endRangeTestConfirm(mode == MODE_RANGE_TEST ? 'y' : 'n'); // Toggle range test mode
 	}
-	if (P1->IFG & BIT4) {
+	if (P1->IFG & BIT4) { // Disable transmitter
 		forceMode(MODE_DISABLED);
 	}
 	P1->IFG = 0;
 }
 
 void PORT3_IRQHandler (void) {
-	if (P3->IFG & BIT5) {
+	if (P3->IFG & BIT5) { // Left pressed
 		nextState.dir = DIR_LEFT;
 	}
 	P3->IFG = 0;
 }
 
 void PORT5_IRQHandler (void) {
-	if (P5->IFG & BIT1) {
+	if (P5->IFG & BIT1) { // Right pressed
 		nextState.dir = DIR_RIGHT;
 	}
-	if (P5->IFG & BIT6) { // Got an interrupt, need to update status so rest of program know state
-		runAsync(&nrfUpdateStatus);
-	}
+	// Got an interrupt from NRF, need to update status to know what happened
+	if (P5->IFG & BIT6) runAsync(&nrfUpdateStatus);
 	P5->IFG = 0;
 }
 
@@ -841,29 +915,26 @@ void PORT5_IRQHandler (void) {
 
 #define NRF_CE_PORT P5
 #define NRF_CE_PIN  BIT7
+// Bits for lights
 #define FL          BIT4
 #define FR          BIT5
 #define BL          BIT6
 #define BR          BIT7
+// Turn signal to h-bridge
 #define TURN        BIT0
+// Left signal to h-bridge
 #define LEFT        BIT1
 
-/**
- *  Type definitions
- */
 typedef enum {
 	MODE_NORMAL,             // Controlling car
 	MODE_CONNECTION_DROPPED, // Lost connection unexpectedly
 	MODE_DISABLED            // Changing settings
 } opMode;
 
-/**
- * Global variables
- */
 static struct {
 	FLAG(connectionDropped);
 	FLAG(statusRead);
-	FLAG(expectingRX);
+	FLAG(expectingRX); // Expecting an RX packet from nrf on SPI
 	FLAG(log);
 	FLAG(dbg);
 } flags = {0};
@@ -901,7 +972,7 @@ void main(void) { // Responsible for setup and user IO.
 	setCPUFreq(FREQ_1_5);
 	initAsync();
 	setupLogging();
-	resetWatchdog(); // Starts it up
+	resetWatchdog(); // Starts connection drop detection
 	NVIC_EnableIRQ(WDT_A_IRQn);
 	setupTimers();
 	setupIO();
@@ -909,6 +980,27 @@ void main(void) { // Responsible for setup and user IO.
 	log("Setup complete");
 
 	__enable_interrupts();
+
+	/**
+	 * General format of constantly running code, only pertains to non-interrupt
+	 * driven codes (not real time dependent) also excludes transmission of
+	 * packets. This section is mostly for logging and other non-important tasks
+	 *
+	 * while (1) {
+	 *     code to run on all mode changes
+	 *     switch (mode) {
+	 *         case mode 1:
+	 *             initialization code, run when mode changes to mode 1
+	 *             while in mode 1 {
+	 *                 stuff to run constantly for mode 1
+	 *             }
+	 *             clean up, run when mode changes away from mode 1
+	 *         case mode 2:
+	 *         ...
+	 *     }
+	 * }
+	 *
+	 */
 	while(1) {
 		switch (mode) {
 		case MODE_NORMAL:
@@ -950,17 +1042,14 @@ void main(void) { // Responsible for setup and user IO.
 		case MODE_CONNECTION_DROPPED:
 			log("Connection dropped");
 			log("Waiting for reconnect");
-			while (mode == MODE_CONNECTION_DROPPED) {
-				setState((state){0, DIR_STRAIT});
-				if (!flags.connectionDropped) requestMode(MODE_CONNECTION_DROPPED, MODE_NORMAL);
-			}
+			setState((state){0, DIR_STRAIT});
+			while (mode == MODE_CONNECTION_DROPPED); // Do nothing until fixed
 			log("Connection restored");
 			break;
 		case MODE_DISABLED:
 			log("Movement disabled");
-			while (mode == MODE_DISABLED) {
-				setState((state){0, DIR_STRAIT});
-			}
+			setState((state){0, DIR_STRAIT});
+			while (mode == MODE_DISABLED); // Do nothing until enabled
 			log("Movement Enabled");
 			break;
 		}
@@ -971,19 +1060,37 @@ void main(void) { // Responsible for setup and user IO.
  * Helper functions
  */
 
+
+/**
+ * Change the mode of operation only if the pace where it is called is still in
+ * the mode it wants to switch from. For example, if we are in connection dropped
+ * mode and want to switch to range test mode, but a packet comes in just after
+ * range test mode has been selected, then connection dropped mode will switch
+ * to normal mode and we will never get to range test mode.
+ */
 inline void requestMode(opMode from, opMode to) {
 	__disable_interrupts(); // Makes sure a forced change sticks in an ISR, as requested mode is either rejected here or takes effect immediately after this function.
 	if (mode == from) mode = to;
 	__enable_interrupts();
 }
 
+/**
+ * Don't care about mode changes that could have happened between the last time
+ * we checked the mode and now, when we want to change the mode. Switch needs
+ * to happen.
+ */
 inline void forceMode(opMode newMode) {
 	mode = newMode;
 }
 
+/**
+ * Takes a state and updates the speed, direction, etc.
+ */
 inline void setState(state newState) {
-	if (mode == MODE_DISABLED || mode == MODE_CONNECTION_DROPPED) newState = (state){0, DIR_STRAIT};
-	float speedDutyCycle = 0;
+	if (mode == MODE_DISABLED || mode == MODE_CONNECTION_DROPPED) {
+		newState = (state){0, DIR_STRAIT};
+	}
+	float speedDutyCycle = 0; // Holds the ration of on / total. Default 0
 	switch (newState.dir) {
 	case DIR_STRAIT:
 		P5->OUT &= ~TURN;
@@ -997,26 +1104,27 @@ inline void setState(state newState) {
 		break;
 	}
 	if (newState.speed == 0) {
-		pwm(prefs.breakMode, CCR1); // Braking / Coasting
+		pwm(prefs.breakMode, CCR1); // 100% == Braking / 0% == Coasting
 		P3->OUT |= BIT6;
 		P5->OUT |= BIT5;
 	}
 	else if (newState.speed > 0) {
 		speedDutyCycle = (float) newState.speed / 31;
-		pwm(speedDutyCycle * speedDutyCycle, CCR1); // Braking / Coasting
+		pwm(speedDutyCycle, CCR1);
 		P3->OUT |= BIT6;
 		P5->OUT &= ~BIT5;
 	}
 	else {
 		speedDutyCycle = (float) newState.speed / -32;
-		pwm(speedDutyCycle * speedDutyCycle, CCR1); // Braking / Coasting
+		pwm(speedDutyCycle, CCR1);
 		P3->OUT &= ~BIT6;
 		P5->OUT |= BIT5;
 	}
 }
 
 inline void resetWatchdog(void) {
-	WDT_A->CTL = WDT_A_CTL_PW |         // Password, needed to modify without resetting device
+	WDT_A->CTL = WDT_A_CTL_PW |         // Password, needed to modify without
+	                                    //   resetting device
                  WDT_A_CTL_SSEL__ACLK | // Use 32 khz clock
 	             WDT_A_CTL_TMSEL |      // Interval mode
 	             WDT_A_CTL_CNTCL |      // Clear the counter
@@ -1075,8 +1183,11 @@ void receive(void) {
 	packetsReceived++;
 }
 
+/**
+ * Run every time an interrupt occurs. Reads RX and clears flags
+ */
 inline void nrfReadRX(void) {
-	nrfUpdateStatus();
+	nrfUpdateStatus(); // Called on interrupt, so last status could be out of date
 	nrfWaitForSPI();
 	if (nrfStatus.rxDR) {
 		// Received something, connection verified.
@@ -1091,19 +1202,17 @@ inline void nrfReadRX(void) {
 		__enable_interrupts();
 		nrfWaitForSPI();
 	}
-	nrfClearStatus();
+	nrfClearStatus(); // Needs to happen whether or not RX happened
 }
 
 /**
  * Setup functions
  */
-
 void setupLogging(void) {
 	configLogging(EUSCI_A0, 115200);
-	P1->SEL0 |= BIT2 | BIT3;                    // 2 = RX 3 = TX
-	P1->SEL1 &= ~(BIT2 | BIT3);                 // Set to primary function (01)
+	P1->SEL0 |= BIT2 | BIT3;    // 2 = RX 3 = TX
+	P1->SEL1 &= ~(BIT2 | BIT3); // Set to primary function (01)
 	startLogging(EUSCIA0_IRQn);
-//	enableCommands(&commandHandler);
 }
 
 void setupTimers(void) {
@@ -1117,7 +1226,11 @@ void setupIO(void) {
 	state s = {
 		.dir = DIR_STRAIT,
 		.speed = 0
-	};
+	}; // Used to set the zero state on init
+
+	// Sensors
+	// TODO ...
+
 	// Lights
 	P6->OUT |= FL | FR | BL | BR;
 	P6->DIR |= FL | FR | BL | BR;
@@ -1130,12 +1243,10 @@ void setupIO(void) {
 	mapPin(PORT_3, PIN_7, PMAP_TA0CCR1A);
 	P5->DIR |= BIT5;
 
-	// Steering
+	// Steering (no pwm needed, not analog)
 	P5->DIR |= TURN | LEFT;
 
 	setState(s); // Zero state
-	// Sensor
-	// TODO ...
 }
 
 void setupNRF(void) {
@@ -1158,18 +1269,15 @@ void setupNRF(void) {
 	// IRQ
 	P5->DIR &= ~BIT6;
 	P5->IFG = 0;
-	P5->IES |= BIT6;            // Interrupt fires on high to low transition
+	P5->IES |= BIT6;
 	P5->IE |= BIT6;
 	NVIC_EnableIRQ(PORT5_IRQn);
 
 	nrfClearStatus();
-	nrfWReg(NRF_CONFIG_ADDR, NRF_CONFIG_TX_DS_IIE |
-	                         NRF_CONFIG_EN_CRC |
+	nrfWReg(NRF_CONFIG_ADDR, NRF_CONFIG_TX_DS_IIE | // Disable TX interrupt
+	                         NRF_CONFIG_EN_CRC |    // Cyclic Redundency Check
 	                         NRF_CONFIG_PWR_UP |
-	                         NRF_CONFIG_PRIM_RX);
-
-	nrfWReg(NRF_SETUP_RETR_ADDR, NRF_SETUP_RETR_ARD_1MS |
-	                             NRF_SETUP_RETR_ARC_15);
+	                         NRF_CONFIG_PRIM_RX);   // Setup as PRx (receiver)
 
 	nrfWReg(NRF_RF_SETUP_ADDR, NRF_RF_SETUP_250KBPS |
 	                           NRF_RF_SETUP_RF_PWR_0);
@@ -1191,7 +1299,6 @@ void EUSCIA1_IRQHandler(void) {
 	uint8_t byte;
 	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_RXIFG) {
 		byte = EUSCI_A1_SPI->RXBUF;
-
 		if (!flags.statusRead) {
 			nrfStatus.reg = byte;
 			flags.statusRead = 1;
@@ -1201,14 +1308,17 @@ void EUSCIA1_IRQHandler(void) {
 			lastRX = byte;
 			runAsync(&receive);
 		}
-		addToBuff(&miso, byte);
 	}
 	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_TXIFG && EUSCI_A1_SPI->IE & EUSCI_A_IE_TXIE) {
+		// Put next byte into TXBUF, if no next byte we're done, stop interrupts
 		if (getFromBuff(&mosi, &byte) == ERR_NO) EUSCI_A1_SPI->TXBUF = byte;
 		else EUSCI_A1_SPI->IE &= ~EUSCI_A_IE_TXIE;
 	}
 }
 
+/**
+ * Only run when Rx has timed out
+ */
 void WDT_A_IRQHandler(void) {
 	flags.connectionDropped = 1;
 	requestMode(MODE_NORMAL, MODE_CONNECTION_DROPPED);
@@ -1216,17 +1326,21 @@ void WDT_A_IRQHandler(void) {
 }
 
 void PORT5_IRQHandler (void) {
-	if (P5->IFG & BIT6) { // Got an interrupt, need to check the RX
-		runAsync(&nrfReadRX);
-	}
+	if (P5->IFG & BIT6) runAsync(&nrfReadRX); // Need to check the RX
 	P5->IFG = 0;
 }
 
 #endif
 
-/**
- * Global function implementations
- */
+
+
+
+
+
+
+
+
+
 
 /**
  * Helper functions
@@ -1241,11 +1355,11 @@ inline float sin(uint8_t theta)  {
 	return sign * sine;
 }
 
-uint8_t encodeState(state stateToEncode) {
+inline uint8_t encodeState(state stateToEncode) {
 	return ((int8_t) stateToEncode.speed) << SPEED_OFS | stateToEncode.dir << DIR_OFS;
 }
 
-uint8_t encodeCommand(command commandToEncode) {
+inline uint8_t encodeCommand(command commandToEncode) {
 	return commandToEncode << CMD_OFS | CMD_ENCODING;
 }
 
@@ -1283,6 +1397,17 @@ inline void nrfSendSPI(void) {
 	EUSCI_A1_SPI->IE |= EUSCI_A_IE_TXIE;
 }
 
+/**
+ * General structure of the next few functions is:
+ *
+ * 	nrfWaitForSPI();               // Let current operation finish
+ *  __disable_interrupts();        // Make sure nothing can break this part, don't wan
+ * 	                               //   multiple commands to be interlaced
+ * 	addToBuff(&mosi, NRF_COMMAND); // sPI command to send
+ * 	addToBuff(&mosi, payload);     // SPI data to send
+ * 	nrfSendSPI();                  // Start up the SPI MOSI
+ * 	__enable_interrupts();         // Run the interrupts and send the messages
+ */
 inline void nrfUpdateStatus(void) {
 	nrfWaitForSPI();
 	__disable_interrupts();
@@ -1321,11 +1446,11 @@ inline void nrfWReg(uint8_t reg, uint8_t payload) {
 	__disable_interrupts();
 	addToBuff(&mosi, NRF_W_REGISTER(reg));
 	addToBuff(&mosi, payload);
-	nrfDsCE(); // Needed when writing registers
+	nrfDsCE();       // Needed when writing registers
 	nrfSendSPI();
 	__enable_interrupts();
-	nrfWaitForSPI();
-	nrfEnCE();
+	nrfWaitForSPI(); // Let the request finish
+	nrfEnCE();       // Re-enable TX / RX
 }
 
 inline void nrfTXState(state stateToTX) {

@@ -20,9 +20,9 @@ void mapPin(port portToMap, pin pinToMap, uint8_t mapping) {
 		pNMap = P7MAP;
 		break;
 	}
-	PMAP->KEYID = PMAP_KEYID_VAL;                // Unlock PMAP controller
-	PMAP->CTL |= PMAP_CTL_PRECFG;                // Allow it to be reconfigured later
+	PMAP->KEYID = PMAP_KEYID_VAL; // Unlock PMAP controller
+	PMAP->CTL |= PMAP_CTL_PRECFG; // Allow it to be reconfigured later
 	pNMap->PMAP_REGISTER[pinToMap / 2] &= ~((pinToMap % 2) ? 0xFF00 : 0x00FF);
  	pNMap->PMAP_REGISTER[pinToMap / 2] |= mapping << ((pinToMap % 2) * 8);
-	PMAP->KEYID = 0;                             // Lock PMAP controller
+	PMAP->KEYID = 0;              // Lock PMAP controller
 }
