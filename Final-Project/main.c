@@ -202,7 +202,7 @@ static struct {
 	FLAG(breakMode);
 	FLAG(slowMode);
 	FLAG(safeMode);
-	FLAG(joyTurns);
+	FLAG(buttonTurns);
 	FLAG(dbg);
 } prefs = {0.1, 0, 0, 0};
 static opMode mode = MODE_NORMAL;
@@ -322,8 +322,6 @@ void main(void) {   // Responsible for setup and user IO.
 						printNewline();
 					}
 					printNewline();
-					packetsSent = 0;
-					droppedPackets = 0;
 					flags.log = 0;
 					readyForCommands();
 				}
@@ -440,7 +438,7 @@ void commandHandler(uint8_t received) {
 		}
 		readyForCommands();
 		break;
-	case 'i':
+	case 'i': // TODO: rename,
 		pauseCommands();
 		if (TIMER_A1->CTL & TIMER_A_CTL_IE) {
 			pauseStatusReports();
@@ -636,7 +634,7 @@ void setupLED(void) {
 	TIMER_A3->CTL &= ~TIMER_A_CTL_IE; // Off for now, not in MODE_SETUP at startup
 	NVIC_EnableIRQ(TA3_N_IRQn);
 }
-
+ 
 /**
  * Helper functions
  */
@@ -708,7 +706,7 @@ inline void resumeStatusReports(void) {
 
 void updateLED(opMode ledMode) {
 
-	// Used for 60Hz update of led state (pulse effect, constatnly needs to be
+	// Used for 60Hz update of led state (pulse effect, constantly needs to be
 	//   updated, etc.
 	if (ledMode == MODE_SETUP ||
 	    ledMode == MODE_CONNECTION_DROPPED ||
@@ -750,15 +748,15 @@ void updateState(void) {
 	int8_t y = ADC14->MEM[1] >> 8;
 	x >>= 2; //  ... 2 for 6 bit width. Done separately for sign extension.
 	y >>= 2;
-	if (prefs.joyTurns) {
-		if (x <= JOY_LEFT_THRESH) nextState.dir = DIR_LEFT;
-		else if (x >= JOY_RIGHT_THRESH) nextState.dir = DIR_RIGHT;
-		else nextState.dir = DIR_STRAIT;
-	}
-	else { // Using buttons
+	if (prefs.buttonTurns) {
 		if (P5->IN & BIT1 && P3->IN & BIT5 || !(P5->IN & BIT1) && !(P3->IN & BIT5)) nextState.dir = DIR_STRAIT;
 		else if (P3->IN & BIT5) nextState.dir = DIR_RIGHT;
 		else nextState.dir = DIR_LEFT;
+	}
+	else { // Using buttons
+		if (x <= JOY_LEFT_THRESH) nextState.dir = DIR_LEFT;
+		else if (x >= JOY_RIGHT_THRESH) nextState.dir = DIR_RIGHT;
+		else nextState.dir = DIR_STRAIT;
 	}
 	nextState.speed = y < JOY_Y_CENT - JOY_JITTER  || y > JOY_Y_CENT + JOY_JITTER? y : 0;
 }
@@ -786,7 +784,7 @@ void transmit(void) {
 			if (packetsToSend) {
 				nrfTXState(cliState);
 				packetsToSend--;
-			}
+	 		}
 			else nrfTXState(nextState);
 		}
 		packetsSent++;
@@ -852,8 +850,9 @@ void TA3_N_IRQHandler(void) {
 void EUSCIA1_IRQHandler(void) {
 	uint8_t byte;
 	if (EUSCI_A1_SPI->IFG & EUSCI_A_IFG_RXIFG) { // Packet received from NRF
+		byte = EUSCI_A1_SPI->RXBUF;
 		if (!flags.statusRead) {
-			nrfStatus.reg = EUSCI_A1_SPI->RXBUF; // Save the status
+			nrfStatus.reg = byte; // Save the status
 			// nrfStatus is a union, so these are instantly updated
 			if (nrfStatus.txDS) flags.packetDropped = 0;
 			if (nrfStatus.maxRT) flags.packetDropped = 1;
@@ -870,12 +869,12 @@ void EUSCIA1_IRQHandler(void) {
 // TODO: This whole thing is only for debugging
 void PORT1_IRQHandler (void) {
 	if (P1->IFG & BIT1) { // Toggle range test
-		// TODO: NO DAMN LOGGING IN INTERRUPTS!!!
-		pauseCommands();
-		endRangeTestConfirm(mode == MODE_RANGE_TEST ? 'y' : 'n'); // Toggle range test mode
+		if (mode == MODE_RANGE_TEST) forceMode(MODE_NORMAL);
+		else forceMode(MODE_RANGE_TEST);
 	}
 	if (P1->IFG & BIT4) { // Disable transmitter
-		forceMode(MODE_DISABLED);
+		if (mode == MODE_DISABLED) forceMode(MODE_NORMAL);
+		else forceMode(MODE_DISABLED);
 	}
 	P1->IFG = 0;
 }
@@ -923,7 +922,7 @@ void PORT5_IRQHandler (void) {
 // Turn signal to h-bridge
 #define TURN        BIT0
 // Left signal to h-bridge
-#define LEFT        BIT1
+#define LEFT        BIT2
 
 typedef enum {
 	MODE_NORMAL,             // Controlling car
@@ -932,16 +931,16 @@ typedef enum {
 } opMode;
 
 static struct {
-	FLAG(connectionDropped);
 	FLAG(statusRead);
 	FLAG(expectingRX); // Expecting an RX packet from nrf on SPI
 	FLAG(log);
-	FLAG(dbg);
+	FLAG(resetNRF);
 } flags = {0};
 static struct {
 	FLAG(breakMode);
 	FLAG(slowMode);
 	FLAG(safeMode);
+	FLAG(dbg);
 } prefs = {0, 0, 0};
 static uint8_t lastRX = 0;
 static command lastCommand = CMD_NOP;
@@ -966,12 +965,17 @@ void setupTimers(void);
 void setupIO(void);
 void setupNRF(void);
 
+void noOp(uint8_t a) {}
+
 void main(void) { // Responsible for setup and user IO.
 	char str[21]; // Enough for 2^64 + '\0' as well as 0xFFFFFF... + '\0'
 	WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD; // Stop watchdog timer
-	setCPUFreq(FREQ_1_5);
+	int i;
+	setCPUFreq(FREQ_12);
 	initAsync();
 	setupLogging();
+	enableCommands(&noOp);
+	log("Setup complete");
 	resetWatchdog(); // Starts connection drop detection
 	NVIC_EnableIRQ(WDT_A_IRQn);
 	setupTimers();
@@ -1026,7 +1030,7 @@ void main(void) { // Responsible for setup and user IO.
 					printString("Last command:     ");
 					printString(commandDescriptions[lastCommand]);
 					printNewline();
-					if (flags.dbg) {
+					if (prefs.dbg) {
 						// TODO: Also print state of sensors and current settings
 						printString("NRF status:       ");
 						uInt8ToHexStr(nrfStatus.reg, str);
@@ -1043,7 +1047,13 @@ void main(void) { // Responsible for setup and user IO.
 			log("Connection dropped");
 			log("Waiting for reconnect");
 			setState((state){0, DIR_STRAIT});
-			while (mode == MODE_CONNECTION_DROPPED); // Do nothing until fixed
+			setupNRF(); // Connection loss potentially caused by a brown out
+			while (mode == MODE_CONNECTION_DROPPED) {
+				if (flags.resetNRF) {
+					setupNRF();
+					flags.resetNRF = 0;
+				}
+			}
 			log("Connection restored");
 			break;
 		case MODE_DISABLED:
@@ -1190,8 +1200,6 @@ inline void nrfReadRX(void) {
 	nrfUpdateStatus(); // Called on interrupt, so last status could be out of date
 	nrfWaitForSPI();
 	if (nrfStatus.rxDR) {
-		// Received something, connection verified.
-		flags.connectionDropped = 0;
 		resetWatchdog();
 		// Get the RX
 		__disable_interrupts();
@@ -1201,8 +1209,15 @@ inline void nrfReadRX(void) {
 		nrfSendSPI();
 		__enable_interrupts();
 		nrfWaitForSPI();
+		forceMode(MODE_NORMAL);
 	}
 	nrfClearStatus(); // Needs to happen whether or not RX happened
+	// TODO: Remove this, its just for debugging
+	nrfUpdateStatus(); // Used with Saleae to see if the clear worked
+	nrfClearStatus(); // Needs to happen whether or not RX happened
+	nrfUpdateStatus(); // Used with Saleae to see if the clear worked
+
+	nrfWaitForSPI();
 }
 
 /**
@@ -1244,7 +1259,9 @@ void setupIO(void) {
 	P5->DIR |= BIT5;
 
 	// Steering (no pwm needed, not analog)
+	P5->OUT &= TURN;
 	P5->DIR |= TURN | LEFT;
+	P5->DIR &= ~BIT1;
 
 	setState(s); // Zero state
 }
@@ -1320,14 +1337,57 @@ void EUSCIA1_IRQHandler(void) {
  * Only run when Rx has timed out
  */
 void WDT_A_IRQHandler(void) {
-	flags.connectionDropped = 1;
 	requestMode(MODE_NORMAL, MODE_CONNECTION_DROPPED);
 	setState((state){0, DIR_STRAIT});
+	flags.resetNRF = 1;
 }
 
 void PORT5_IRQHandler (void) {
 	if (P5->IFG & BIT6) runAsync(&nrfReadRX); // Need to check the RX
 	P5->IFG = 0;
+}
+
+
+
+void NMI_Handler(void) {
+	while(1);
+}
+
+void HardFault_Handler(void) {
+	while(1);
+}
+
+void MemManage_Handler(void) {
+	while(1);
+}
+
+void BusFault_Handler(void) {
+	while(1);
+}
+
+void UsageFault_Handler(void) {
+	while(1);
+}
+void SVC_Handler(void) {
+	while(1);
+}
+void DebugMon_Handler(void) {
+	while(1);
+}
+void SysTick_Handler(void) {
+	while(1);
+}
+void PSS_IRQHandler(void) {
+	while(1);
+}
+void CS_IRQHandler(void) {
+	while(1);
+}
+void PCM_IRQHandler(void) {
+	while(1);
+}
+void FPU_IRQHandler(void) {
+	while(1);
 }
 
 #endif

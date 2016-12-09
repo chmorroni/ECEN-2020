@@ -152,10 +152,10 @@ error initTimerA(Timer_A_Type * timer, float freq) {
  *              you want to use with port mapping
  */
 void pwm(float dutyCycle, ccrN reg) {
-	if (dutyCycle <= 0 || dutyCycle > 1) {     // Out of bounds / off -> default to off
+	if (dutyCycle <= 0) {     // Out of bounds / off -> default to off
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0;  // Output bit, default 0
 	}
-	else if (dutyCycle == 1) {
+	else if (dutyCycle >= 1) {
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0 | // Output bit
 		                      TIMER_A_CCTLN_OUT;       // Set OUTN signal high
 	}
@@ -165,11 +165,11 @@ void pwm(float dutyCycle, ccrN reg) {
 	}
 }
 void pwmI(float dutyCycle, ccrN reg) {
-	if (dutyCycle <= 0 || dutyCycle > 1) {     // Out of bounds / off -> default to off
+	if (dutyCycle <= 0) {     // Out of bounds / off -> default to off
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0 | // Output bit
 		                      TIMER_A_CCTLN_OUT;       // Set OUTN signal high
 	}
-	else if (dutyCycle == 1) {
+	else if (dutyCycle >= 1) {
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0;  // Output bit, default 0
 	}
 	else {

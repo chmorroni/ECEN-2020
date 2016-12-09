@@ -2,7 +2,6 @@
 
 main.obj: ../main.c
 main.obj: /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdint.h
-main.obj: /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdarg.h
 main.obj: /home/albert/ti/ccsv6/ccs_base/arm/include/msp.h
 main.obj: /home/albert/ti/ccsv6/ccs_base/arm/include/msp432p401r.h
 main.obj: /home/albert/ti/ccsv6/ccs_base/arm/include/msp_compatibility.h
@@ -30,7 +29,6 @@ main.obj: ../Libs/helpers.h
 
 ../main.c: 
 /home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdint.h: 
-/home/albert/ti/ccsv6/tools/compiler/arm_15.12.3.LTS/include/stdarg.h: 
 /home/albert/ti/ccsv6/ccs_base/arm/include/msp.h: 
 /home/albert/ti/ccsv6/ccs_base/arm/include/msp432p401r.h: 
 /home/albert/ti/ccsv6/ccs_base/arm/include/msp_compatibility.h: 
