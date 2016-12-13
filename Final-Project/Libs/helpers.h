@@ -24,17 +24,47 @@ error uIntToStr(uint64_t num, char * string, uint8_t minWidth);
 error intToStr(int64_t num, char * string, uint8_t minWidth);
 
 /**
- * String should be at least 2 * bytesToPrint + 3 ('0' + 'x' + 2 chars per byte + '\0'
+ * Includes null terminator
  */
-error bytesToHexStr(uint8_t * bytes, char * string, uint32_t bytesToPrint, endianness end);
+inline int32_t strLen(char * str);
 
 /**
- *
+ * True if the character has a printable format (not a control character)
  */
+inline uint8_t printable(char character);
+/**
+ * True if the character is a number.
+ */
+inline uint8_t numeric(char character);
+
+/**
+ * These functions take a number or set of bytes and convert it into a string,
+ * stored in a buffer pointed to by char. It is the users responsibility to
+ * ensure the string array is long enough.
+ */
+
+error uIntToStr(uint64_t num, char * string, uint8_t minWidth);
+error intToStr(int64_t num, char * string, uint8_t minWidth);
+
+/**
+ * Returns the char representing the number. If the uint8 is greater than 15,
+ * returns 'U' for 'Undefined' or 'NaN'.
+ */
+static inline char nibbleToChar(uint8_t nibble);
+
+/**
+ * String should be at least 2 * bytesToPrint + 3('0' + 'x' + 2 chars per byte + '\0')
+ */
+error bytesToHexStr(uint8_t * bytes, char * string, uint32_t bytesToPrint, endianness end);
 error uInt8ToHexStr(uint8_t num, char * string);
 error uInt16ToHexStr(uint16_t num, char * string);
 error uInt32ToHexStr(uint32_t num, char * string);
 error uInt64ToHexStr(uint64_t num, char * string);
+
+/**
+ * These functions parse a string into an integer. They error out on non-numeric
+ * inputs and if the number is too big to fit in container.
+ */
 
 error strToUInt32(char * string, uint32_t * container);
 error strToUInt64(char * string, uint64_t * container);

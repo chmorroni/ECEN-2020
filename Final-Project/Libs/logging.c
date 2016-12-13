@@ -39,7 +39,6 @@ static inline void _printNewlineNB(void);
 static inline void _printNewline(void);
 static inline void _printString(char * string);
 static inline void _printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t lvl1CharsPrinted);
-static void _stopGettingLine(void);
 static void inline _print80NB(char * string, uint8_t charsPrinted);
 static void _rxHandler();
 
@@ -97,7 +96,7 @@ error getChar(getCharFuncPtr callback) {
 }
 
 /**
- * Calls callback asynchronously when a line is received
+ * Calls callback asynchronously when a line is received (ending in '\r'.
  */
 error getLine(getLineFuncPtr callback) {
 	if (!callback) return ERR_NULL_PTR;
@@ -135,8 +134,8 @@ error getOption(getOptionFuncPtr callback, uint32_t optionsLen, char ** optionsA
 }
 
 /**
- * Given to getLine to get a number. Performs error checking to ensure it is a
- * number and is within the limits requested.
+ * INTERNAL. Given to getLine to get a number. Performs error checking to
+ * ensure it is a number and is within the limits requested.
  */
 void _getLineNumberHandler(char * line, error err) {
 	int64_t number = 0;
@@ -175,8 +174,8 @@ error getNumberInRange(getNumberFuncPtr callback, int64_t min, int64_t max) {
 }
 
 /**
- * Prints a character as soon as the buffer is empty. Does not wait for getting
- * operations to complete.
+ * INTERNAL. Prints a character as soon as the buffer is empty. Does not wait
+ * for getting operations to complete.
  */
 static inline void _printCharNB(char letter) {
 	while (!(uartModule->IFG & EUSCI_A_IFG_TXIFG));
@@ -184,13 +183,16 @@ static inline void _printCharNB(char letter) {
 }
 
 /**
- * Prints a char. Blocking if getting.
+ * INTERNAL. Prints a char. Blocking if getting.
  */
 static inline void _printChar(char letter) {
 	while (!(uartModule->IFG & EUSCI_A_IFG_TXIFG) || getting); // Block until done with any get operations.
 	uartModule->TXBUF = letter;
 }
 
+/**
+ * Prints a char. Blocking if getting.
+ */
 error printChar(char letter) {
 	if (!uartModule) return ERR_UNINITIALIZED;
 	_printChar(letter);
@@ -198,28 +200,40 @@ error printChar(char letter) {
 }
 
 /**
- * Prints a newline without blocking on getting operation
+ * INTERNAL. Prints a newline without blocking on getting operation
  */
 static inline void _printNewlineNB(void) {
 	_printCharNB('\n');
 	_printCharNB('\r');
 }
 
+/**
+ * INTERNAL. Prints a newline, blocking on getting operation
+ */
 static inline void _printNewline(void) {
 	_printChar('\n');
 	_printChar('\r');
 }
 
+/**
+ * Prints '\n', '\r'.
+ */
 error printNewline(void) {
 	if (!uartModule) return ERR_UNINITIALIZED;
 	_printNewline();
 	return ERR_NO;
 }
 
+/**
+ * INTERNAL. Prints '\n', '\r'.
+ */
 static inline void _printString(char * string) {
 	while (*string) _printChar(*(string++));
 }
 
+/**
+ * Iterates through string, printing characters.
+ */
 error printString(char * string) {
 	if (!string) return ERR_NULL_PTR;
 	if (!uartModule) return ERR_UNINITIALIZED;
@@ -227,6 +241,9 @@ error printString(char * string) {
 	return ERR_NO;
 }
 
+/**
+ * Prints array of characters, based on a length.
+ */
 error printArray(uint32_t len, char ** strArr) {
 	uint32_t i = 0;
 	char * str = NULL;
@@ -283,6 +300,10 @@ error printWrap(char * string, uint8_t lvl1Indent, uint8_t lvlNIndent, uint8_t l
 	return ERR_NO;
 }
 
+/**
+ * Prints a time stamp and wraps the string at 80 chars. Allows nested logging
+ * by separating them with break chars.
+ */
 error log(char * string) {
 	// The number of logging operations active currently. Allows printing of log
 	// break characters '<'/'>', '{'/'}', and '['/']' for nested logging events,
@@ -331,6 +352,9 @@ static void inline _print80NB(char * string, uint8_t charsPrinted) {
 	}
 }
 
+/**
+ * Run asynchronously when a UART char is received.
+ */
 static void _rxHandler() {
 	static char * line = NULL;
 	static uint32_t charsRead = 0;
@@ -422,6 +446,10 @@ static void _rxHandler() {
 	}
 }
 
+/**
+ * Run to enable the '$ ' line at the bottom of the terminal and allow the
+ * callback to be run.
+ */
 error readyForCommands(void) {
 	if (!uartModule || !callbacks.command) return ERR_UNINITIALIZED;
 	if (getting) return ERR_RACE_COND; // Locks up on print
@@ -434,6 +462,9 @@ error readyForCommands(void) {
 	return ERR_NO;
 }
 
+/**
+ * Run when the terminal is busy printing to hide the '$ '.
+ */
 error pauseCommands(void) {
 	if (!uartModule) return ERR_UNINITIALIZED;
 	flags.readyForCommand = 0;
@@ -442,6 +473,9 @@ error pauseCommands(void) {
 	return ERR_NO;
 }
 
+/**
+ * Handler to receive chars.
+ */
 void eUSCIUARTHandler(void) {
 	if (uartModule->IFG & EUSCI_A_IFG_RXIFG) {
 		lastRX = uartModule->RXBUF; // Clears IFG and saves the RX

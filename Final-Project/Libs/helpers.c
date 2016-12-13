@@ -1,6 +1,7 @@
 #include "helpers.h"
+
 /**
- * @desc includes null terminator
+ * Includes null terminator
  */
 inline int32_t strLen(char * str) {
 	int32_t len = 1;
@@ -9,13 +10,25 @@ inline int32_t strLen(char * str) {
 	return len;
 }
 
+/**
+ * True if the character has a printable format (not a control character)
+ */
 inline uint8_t printable(char character) {
 	return character >= ' ' && character <= '~';
 }
 
+/**
+ * True if the character is a number.
+ */
 inline uint8_t numeric(char character) {
 	return character >= ' ' && character <= '~';
 }
+
+/**
+ * These functions take a number or set of bytes and convert it into a string,
+ * stored in a buffer pointed to by char. It is the users responsibility to
+ * ensure the string array is long enough.
+ */
 
 error uIntToStr(uint64_t num, char * string, uint8_t minWidth) {
     uint8_t i = 0;         // If number is zero, one char must still be transmitted: '0'
@@ -48,11 +61,18 @@ error intToStr(int64_t num, char * string, uint8_t minWidth) {
     return uIntToStr(num, string, minWidth);
 }
 
+/**
+ * Returns the char representing the number. If the uint8 is greater than 15,
+ * returns 'U' for 'Undefined' or 'NaN'.
+ */
 static inline char nibbleToChar(uint8_t nibble) {
 	char offset = nibble < 0xA ? '0' : 'A' - 0xA;
-	return nibble > 0xF ? 'U' : nibble + offset;
+	return nibble > 0xF ? 'U' : nibble + offset; // Uses 'U; to signify undefined / NAN
 }
 
+/**
+ * String should be at least 2 * bytesToPrint + 3('0' + 'x' + 2 chars per byte + '\0')
+ */
 error bytesToHexStr(uint8_t * bytes, char * string, uint32_t bytesToPrint, endianness end) {
 	uint32_t i, j; // Used for loops
     if (!string || !bytes) return ERR_NULL_PTR;
@@ -93,6 +113,11 @@ error uInt32ToHexStr(uint32_t num, char * string) {
 error uInt64ToHexStr(uint64_t num, char * string) {
 	return bytesToHexStr((uint8_t *) &num, string, sizeof (uint64_t), END_LITTLE);
 }
+
+/**
+ * These functions parse a string into an integer. They error out on non-numeric
+ * inputs and if the number is too big to fit in container.
+ */
 
 error strToUInt32(char * string, uint32_t * container) {
 	if (!string || !container) return ERR_NULL_PTR;

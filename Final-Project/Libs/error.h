@@ -17,9 +17,8 @@ typedef enum {
 } error;
 
 /**
- * @desc  Returns a pointer to a static string that provides a wordier
- *        description of the error, useful for logging errors.
- * @param err - The error to describe.
+ * Returns a pointer to a static string that provides a wordier description of
+ * the error, useful for logging errors.
  */
 char * errorToStr(error err);
 

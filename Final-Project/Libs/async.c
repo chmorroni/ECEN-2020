@@ -4,7 +4,7 @@
 static struct {
 	FLAG(initialized);
 } flags = {0};
-PtrBuff funcs;
+static PtrBuff funcs;
 
 /**
  * Initialize necessary buffer and priority to ensure PendSV does not block
@@ -19,13 +19,16 @@ void initAsync(void) {
 }
 
 /**
- * Startup the interrupt
+ * Add the function to the buffer of funcs to run and start running.
  */
 void runAsync(asyncFuncPtr callback) {
 	addToPtrBuff(&funcs, callback);
 	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 }
 
+/**
+ * Interrupt handler
+ */
 void PendSV_Handler(void) {
 	asyncFuncPtr asyncFunc = NULL;
 	// No more functions need to be run asynchronously

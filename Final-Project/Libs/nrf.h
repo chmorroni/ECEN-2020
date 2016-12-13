@@ -6,12 +6,12 @@
 typedef uint8_t nrfCmd;
 
 /* Register addresses and bitmasks (Table 27) */
-#define NRF_CONFIG_ADDR         (0x00)                     // Configuration
-#define NRF_EN_AA_ADDR          (0x01)                     // Enable 'Auto Acknowledge'
-#define NRF_EN_RXADDR_ADDR      (0x02)                     // Enabled RX Addresses
-#define NRF_SETUP_RETR_ADDR     (0x04)                     // Enabled RX Addresses
+#define NRF_CONFIG_ADDR         (0x00)
+#define NRF_EN_AA_ADDR          (0x01)
+#define NRF_EN_RXADDR_ADDR      (0x02)
+#define NRF_SETUP_RETR_ADDR     (0x04)
 #define NRF_RF_SETUP_ADDR       (0x06)
-#define NRF_STATUS_ADDR         (0x07)                     // Enabled RX Addresses
+#define NRF_STATUS_ADDR         (0x07)
 #define NRF_RPD_ADDR            (0x09)
 #define NRF_RX_PW_P0_ADDR       (0x11)
 #define NRF_FEATURE_ADDR        (0x1D)
@@ -44,8 +44,8 @@ typedef uint8_t nrfCmd;
 #define NRF_FEATURE_EN_DYN_ACK  (0x01)
 
 /* Command encodings (Table 19) */
-#define NRF_R_REGISTER(addr)    ((nrfCmd) addr)          // Read specified register
-#define NRF_W_REGISTER(addr)    ((nrfCmd) (0x20 | addr)) // Write specified register
+#define NRF_R_REGISTER(addr)    ((nrfCmd) addr)
+#define NRF_W_REGISTER(addr)    ((nrfCmd) (0x20 | addr))
 #define NRF_R_RX_PAYLOAD        ((nrfCmd) 0x61)
 #define NRF_W_TX_PAYLOAD        ((nrfCmd) 0xA0)
 #define NRF_FLUSH_TX            ((nrfCmd) 0xE1)

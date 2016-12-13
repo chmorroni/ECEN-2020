@@ -29,6 +29,10 @@ typedef enum {
 	PORT_7
 } port;
 
+/**
+ * Used to map a pin to another function and enable it the mapping output on
+ * the pin.
+ */
 void mapPin(port portToMap, pin pinToMap, uint8_t mapping);
 
 #endif

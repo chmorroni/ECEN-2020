@@ -1,4 +1,6 @@
 #include "timers.h"
+#include "async.h"
+#include "helpers.h"
 #define TA0_PRESCALER_MAX 64
 #define UINT16_T_MAX (0xFFFF)
 #define RTC_KEY ((uint16_t) 0xA500)
@@ -10,11 +12,11 @@ typedef struct {
 } time;
 
 static time current = {0};
+static asyncFuncPtr delayCallback = NULL;
 
 /**
- * @desc  Sets the DCOCLK to the specified frequency, ACLK to REFOCLK, and SMCLK
- *        and MCLK both to DCOCLK.
- * @param freqDCO - The desired frequency to run DCOCLK at.
+ * Sets the DCOCLK to the specified frequency, ACLK to REFOCLK, and SMCLK and
+ * MCLK both to DCOCLK.
  */
 void setCPUFreq(cpuFreq freqDCO) {
 	/* Configure required clocks */
@@ -46,17 +48,17 @@ void setCPUFreq(cpuFreq freqDCO) {
 }
 
 /**
- *
+ * Handler for 1 Hz RTC interrupt.
  */
 void RTC_C_IRQHandler(void) {
 	RTC_C->IV; // Clear interrupt
-	current.seconds = (RTC_C->TIM0 & RTC_C_TIM0_SEC_MASK) >> RTC_C_TIM0_SEC_OFS;
-	current.minutes = (RTC_C->TIM0 & RTC_C_TIM0_MIN_MASK) >> RTC_C_TIM0_MIN_OFS;
+	current.seconds = (RTC_C->TIM0 & RTC_C_TIM0_SEC_MASK)  >> RTC_C_TIM0_SEC_OFS;
+	current.minutes = (RTC_C->TIM0 & RTC_C_TIM0_MIN_MASK)  >> RTC_C_TIM0_MIN_OFS;
 	current.hours   = (RTC_C->TIM1 & RTC_C_TIM1_HOUR_MASK) >> RTC_C_TIM1_HOUR_OFS;
 }
 
 /**
- * @desc  Initializes the RTC
+ * Initializes the RTC.
  */
 void initRTC(void) {
 	RTC_C->CTL0 = RTC_KEY;               // Unlock register
@@ -68,23 +70,23 @@ void initRTC(void) {
 }
 
 /**
- * @desc  Used to read time from the RTC.
+ * Used to read time from the RTC after it has been initialized.
  */
 inline uint8_t getHours(void) {
 	return current.hours;
 }
+
 inline uint8_t getMinutes(void) {
 	return current.minutes;
 }
+
 inline uint8_t getSeconds(void) {
 	return current.seconds;
 }
 
 /**
- *  @desc Initializes a timer to the requested frequency. Can go from SMCLK to
- *        0.008 Hz. The timer is put into up mode and CCRN registers are reset.
- *  @param timer - The timer to initialize.
- *  @param freq - The frequency with which the interrupt should fire.
+ * Initializes a timer to the requested frequency. Can go from SMCLK frequency
+ * to 0.008 Hz. The timer is put into up mode and CCRN registers are reset.
  */
 error initTimerA(Timer_A_Type * timer, float freq) {
 	float clkHz = 1500000 * (1 << ((CS->CTL0 & CS_CTL0_DCORSEL_MASK) >> CS_CTL0_DCORSEL_OFS));
@@ -95,7 +97,7 @@ error initTimerA(Timer_A_Type * timer, float freq) {
 	if (!timer) return ERR_NULL_PTR;
 	if (freq > clkHz) return ERR_PARAM_OUT_OF_BOUNDS;
 	// Runs through possible configurations of input dividers and clock sources
-	// until the frequency can be achieved. Errors out if if fails.
+	// until the frequency can be achieved. Errors out if it fails.
 	if (freq < minFreq) {
 		ctl0ID = TIMER_A_CTL_ID__8;
 		clkHz /= 8;
@@ -107,7 +109,7 @@ error initTimerA(Timer_A_Type * timer, float freq) {
 		}
 		if (freq < minFreq) {
 			clk = TIMER_A_CTL_SSEL__ACLK; // Can't be achieved with SMCLK
-			clkHz = 32000;
+			clkHz = 32000; // Default freq for low frequency clock.
 			minFreq = clkHz / UINT16_T_MAX;
 			ctl0ID = TIMER_A_CTL_ID__1;
 			ex0ID = TIMER_A_EX0_IDEX__1;
@@ -141,19 +143,18 @@ error initTimerA(Timer_A_Type * timer, float freq) {
 }
 
 /**
- * @desc  Start PWM output based on the frequency setup using the function
- *        initTimerA() on the TIMER_A0 module. Map a port to PMAP_TA0CCRNA for
- *        the PWM signal, where N corresponds to the pwm register you are using
- *        (selected by ccrN).
- * @param dutyCycle - A 0 to 1 value that represents the % time  to
- *                    stay high. Any value outside this range turns the pwm
- *                    signal off.
- * @param reg - The ccrN register to use. This corresponds to the output signal
- *              you want to use with port mapping
+ * Start PWM output based on the frequency setup using the function initTimerA()
+ * on the TIMER_A0 module. Map a port to PMAP_TA0CCRNA for the PWM signal, where
+ * N corresponds to the pwm register you are using (selected by ccrN).
+ * dutyCycle - A 0 to 1 value that represents the % time  to
+ *             stay high. Any value outside this range turns the pwm
+ *             signal off.
+ * reg - The ccrN register to use. This corresponds to the output signal
+ *       you want to use with port mapping
  */
 void pwm(float dutyCycle, ccrN reg) {
 	if (dutyCycle <= 0) {     // Out of bounds / off -> default to off
-		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0;  // Output bit, default 0
+		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0; // Output bit, default 0
 	}
 	else if (dutyCycle >= 1) {
 		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0 | // Output bit
@@ -164,16 +165,46 @@ void pwm(float dutyCycle, ccrN reg) {
 		TIMER_A0->CCR[reg] = (uint16_t) (TIMER_A0->CCR[0] * dutyCycle);
 	}
 }
-void pwmI(float dutyCycle, ccrN reg) {
-	if (dutyCycle <= 0) {     // Out of bounds / off -> default to off
-		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0 | // Output bit
-		                      TIMER_A_CCTLN_OUT;       // Set OUTN signal high
-	}
-	else if (dutyCycle >= 1) {
-		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_0;  // Output bit, default 0
-	}
-	else {
-		TIMER_A0->CCTL[reg] = TIMER_A_CCTLN_OUTMOD_3;  // Reset / Set
-		TIMER_A0->CCR[reg] = (uint16_t) (TIMER_A0->CCR[0] * dutyCycle);
-	}
+
+/**
+ * Initializes timer used for delay function.
+ */
+void initDelay(void) {
+	initAsync();
+	NVIC_EnableIRQ(T32_INT1_IRQn);
+}
+
+/**
+ * Delay the running of a function. Soft real time, runs asynchronously, not
+ * within interrupt. Takes the delay in increments of 10 microseconds. Goes up
+ * to about 100 seconds. Only one delay at a time. Running delay() before the
+ * last interval passed to delay() is over is ignored.
+ */
+void delay(asyncFuncPtr callback, uint32_t decaMicroSecs) {
+	if (delayCallback) return;
+	TIMER32_1->CONTROL &= ~TIMER32_CONTROL_ENABLE;
+	TIMER32_1->LOAD = 15 * decaMicroSecs * (1 << ((CS->CTL0 & CS_CTL0_DCORSEL_MASK) >> CS_CTL0_DCORSEL_OFS));
+	delayCallback = callback;
+	TIMER32_1->CONTROL = TIMER32_CONTROL_ONESHOT | // Run once
+			             TIMER32_CONTROL_SIZE |    // 32 bit mode for timer
+						 TIMER32_CONTROL_MODE |    // Use LOAD register for number
+						 TIMER32_CONTROL_ENABLE |  // Enable timer
+						 TIMER32_CONTROL_IE;       // Enable interrupt
+}
+
+/**
+ * Returns True if delay operation in progress.
+ */
+uint8_t delaying(void) {
+	return !!delayCallback;
+}
+
+/**
+ * Handler for delay timer.
+ */
+void T32_INT1_IRQHandler(void) {
+	if (!delayCallback) return;
+	runAsync(delayCallback);
+	delayCallback = NULL;
+	TIMER32_1->INTCLR = 1;
 }

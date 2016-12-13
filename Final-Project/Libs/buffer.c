@@ -3,27 +3,21 @@
 #include "msp.h"
 
 /**
- * @desc  Returns true if the buffer is full, else false. No error checking is
- *        done.
- * @param buff - The address of an initialized buffer.
+ * Returns true if initialized buffer pointed to by buff is full.
  */
 inline int8_t buffFull(Buff * buff) {
 	return buff->numItems >= buff->size;
 }
 
 /**
- * @desc  Returns true if the buffer is empty, else false. No error checking is
- *        done.
- * @param buff - The address of an initialized buffer.
+ * Returns true if initialized buffer pointed to by buff is empty.
  */
 inline int8_t buffEmpty(Buff * buff) {
 	return !buff->numItems;
 }
 
 /**
- * @desc  Returns true if the buffer is initialized, else false. No error
- *        checking is done.
- * @param buff - The address of an initialized buffer.
+ * Returns true if initialized buffer pointed to by buff is initialized.
  */
 inline int8_t buffInitialized(Buff * buff) {
 	return !!buff->size;
@@ -31,11 +25,8 @@ inline int8_t buffInitialized(Buff * buff) {
 
 /**
  * ALLOCATES MEMORY!!! FREE WITH freeBuff
- *
- * @desc  Takes a created buffer and initializes it to the requested length.
- * @param buff - The address of an uninitialized buffer (use freeBuff before
- *               reinitializing an initialized buffer.
- * @param size - The number of elements to store.
+ * Allocates the memory for the uninitialized buffer pointed to by buff to the
+ * size indicated by size.
  */
 error initBuff(Buff * buff, uint32_t size) {
 	if (!buff) return ERR_NULL_PTR;
@@ -49,10 +40,8 @@ error initBuff(Buff * buff, uint32_t size) {
 	return ERR_NO;
 }
 
-
 /**
- * @desc  Empties the buffer, does not free memory or change size.
- * @param buff - The address of an initialized buffer.
+ * Empties the initialized buffer, does not free memory.
  */
 error emptyBuff(Buff * buff) {
 	if (!buff) return ERR_NULL_PTR;
@@ -62,9 +51,7 @@ error emptyBuff(Buff * buff) {
 }
 
 /**
- * @desc  Frees any memory allocated from initBuff. This deletes all data and
- *        resets the size to 0.
- * @param buff - The address of an initialized buffer.
+ * Empties the initialized buffer and frees the memory.
  */
 error freeBuff(Buff * buff) {
 	if (!buff) return ERR_NULL_PTR;
@@ -76,10 +63,8 @@ error freeBuff(Buff * buff) {
 }
 
 /**
- * @desc  Adds a given item to the buffer if it is not full, returns the error
- *        if it is full.
- * @param buff - The address of an initialized buffer.
- * @param item - The item to add.
+ * Adds a given item to the initialized buffer if it is not full, returns the
+ * error if it is full.
  */
 error addToBuff(Buff * buff, BUFF_TYPE item) {
 	if (!buff) return ERR_NULL_PTR;
@@ -94,10 +79,8 @@ error addToBuff(Buff * buff, BUFF_TYPE item) {
 }
 
 /**
- * @desc  Gets the next item from the buffer if it is not empty, returns the
- *        error if it is empty.
- * @param buff - The address of an initialized buffer.
- * @param container - The address of the variable to put the item in.
+ * Gets the next item from the initialized buffer if it is not empty, returns
+ * the error if it is empty. Puts the item in where container points.
  */
 error getFromBuff(Buff * buff, BUFF_TYPE * container) {
 	if (!buff || !container) return ERR_NULL_PTR;
